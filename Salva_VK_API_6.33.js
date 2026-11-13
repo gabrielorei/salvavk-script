@@ -29,7 +29,7 @@ function parseIds(raw) {
   const m = String(raw || "").match(/^in\.\(([\d,]+)\)$/);
   if (!m) return null;
   const ids = m[1].split(",").map(validId);
-  return ids.length && ids.length <= 100 && ids.every(x => x !== null) ? ids : null;
+  return ids.length && ids.length <= 95 && ids.every(x => x !== null) ? ids : null;
 }
 function parseAfter(raw) {
   if (!raw) return null;
