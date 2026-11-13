@@ -8339,27 +8339,32 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     function rxNtEntry(k) {
         let e = rxNtMirror.get(k);
-        if (!e) { e = { m: new Map(), ft: 0 }; rxNtMirror.set(k, e); }
+        if (!e) { e = { m: new Map(), t: new Map(), o: null, ft: 0 }; rxNtMirror.set(k, e); }
         return e;
     }
-    function rxNtMirrorSet(key, cid, uid, emoji) {
-        const e = rxNtEntry(key + ':' + cid);
-        if (String(emoji) === '0') e.m.delete(uid); else e.m.set(uid, String(emoji));
+    function rxNtMirrorSet(key, cid, uid, emoji, owner, updated) {
+        const e = rxNtEntry(key + ':' + cid), id = Number(uid), em = String(emoji);
+        if (owner != null && Number.isFinite(Number(owner))) e.o = Number(owner);
+        if (em === '0') { e.m.delete(id); e.t.delete(id); }
+        else { e.m.set(id, em); if (updated) e.t.set(id, String(updated)); }
     }
     {
         const s = LS.json(RX_NT_MIRROR_KEY);
-        if (s && Array.isArray(s.r)) { s.r.forEach(a => rxNtMirrorSet(a[0], a[1], a[2], a[3])); rxNtCursor = s.c || null; }
-        if (s && Array.isArray(s.f)) s.f.forEach(k => { rxNtEntry(k).ft = 1; });
+        if (s && s.v === 2 && Array.isArray(s.r)) {
+            s.r.forEach(a => rxNtMirrorSet(a[0], a[1], a[2], a[3], a[4], a[5]));
+            rxNtCursor = s.c || null;
+            if (Array.isArray(s.f)) s.f.forEach(k => { rxNtEntry(k).ft = 1; });
+        }
     }
     function rxNtMirrorSave() {
         const r = [], f = [];
         rxNtMirror.forEach((e, k) => {
             const i = k.lastIndexOf(':');
-            e.m.forEach((emoji, uid) => r.push([k.slice(0, i), Number(k.slice(i + 1)), uid, emoji]));
+            e.m.forEach((emoji, uid) => r.push([k.slice(0, i), Number(k.slice(i + 1)), uid, emoji, e.o, e.t.get(uid) || '']));
             if (e.ft) f.push(k);
         });
         rxNtSavedAt = Date.now();
-        LS.setJson(RX_NT_MIRROR_KEY, { c: r.length > 8000 ? null : rxNtCursor, r: r.slice(-8000), f: f.slice(-4000) });
+        LS.setJson(RX_NT_MIRROR_KEY, { v: 2, c: r.length > 8000 ? null : rxNtCursor, r: r.slice(-8000), f: f.slice(-4000) });
     }
 
     async function rxNtMirrorRefresh() {
@@ -8377,7 +8382,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 const tuple = rxCursorParts(since);
                 const cursorQuery = tuple ? '&after=' + encodeURIComponent(since) : '&updated_at=gt.' + encodeURIComponent(since);
                 const rows = await rxGet('&order=updated_at.asc&limit=1000' + cursorQuery);
-                rows.forEach(r => rxNtMirrorSet(r.topic, r.comment_id, r.user_id, r.emoji));
+                rows.forEach(r => rxNtMirrorSet(r.topic, r.comment_id, r.user_id, r.emoji, r.comment_owner_id, r.t));
                 n += rows.length;
                 if (rows.length) since = rxCursorOf(rows[rows.length - 1]);
                 if (rows.length < 1000) break;
@@ -8408,7 +8413,15 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         const fresh = new Map();
         cids.forEach(c => fresh.set(c, new Map()));
         rows.forEach(r => { const m = fresh.get(r.comment_id); if (m) m.set(r.user_id, String(r.emoji)); });
-        fresh.forEach((m, cid) => { const e = rxNtEntry(key + ':' + cid); e.m = m; e.ft = Date.now(); });
+        fresh.forEach((m, cid) => {
+            const e = rxNtEntry(key + ':' + cid);
+            e.m = m; e.t = new Map();
+            rows.filter(r => Number(r.comment_id) === Number(cid)).forEach(r => {
+                if (r.t) e.t.set(Number(r.user_id), r.t);
+                if (r.comment_owner_id != null) e.o = Number(r.comment_owner_id);
+            });
+            e.ft = Date.now();
+        });
         if (Date.now() - rxNtSavedAt > 5000) rxNtMirrorSave();
     }
     async function rxNtReactors(key, cid, fresh) {
@@ -8656,11 +8669,8 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     const RX_NT_OWN_IDS = RX_LIST.filter(r => r.noLike).map(r => String(r.id));
     const RX_NT_OWN_PREFIX = 'notification-item-salvavk-';
     const RX_NT_OWN_POLL_MS = 30000;
-    const RX_NT_OWN_STATE_PREFIX = 'vk_arx_nt_own_v2_';
     const RX_NT_OWN_COMMENT_KEY = 'vk_arx_nt_own_comments_v1';
-    let rxNtOwnAt = 0, rxNtOwnBusy = false, rxNtOwnLoadedFor = null;
-    let rxNtOwnCursor = null;
-    const rxNtOwnRows = new Map();
+    let rxNtOwnAt = 0, rxNtOwnBusy = false;
     const rxNtOwnComments = new Map();
     const rxNtOwnCommentPending = new Map();
     {
@@ -8679,33 +8689,6 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         if (sec < 86400) return 'há ' + Math.floor(sec / 3600) + ' h';
         const days = Math.floor(sec / 86400);
         return 'há ' + days + (days === 1 ? ' dia' : ' dias');
-    }
-
-    function rxNtOwnLoad(uid) {
-        if (rxNtOwnLoadedFor === uid) return;
-        rxNtOwnLoadedFor = uid;
-        rxNtOwnRows.clear();
-        rxNtOwnCursor = null;
-        const saved = LS.json(RX_NT_OWN_STATE_PREFIX + uid);
-        const floor = Date.now() - RX_NT_MIRROR_DAYS * 86400000;
-        if (saved && Array.isArray(saved.r)) saved.r.forEach(a => {
-            if (!Array.isArray(a) || a.length < 6) return;
-            const row = { topic: String(a[0]), comment_id: Number(a[1]), user_id: Number(a[2]),
-                comment_owner_id: Number(a[3]) || null, emoji: String(a[4]), t: String(a[5] || '') };
-            if (Date.parse(row.t) >= floor) rxNtOwnRows.set([row.topic, row.comment_id, row.user_id].join(':'), row);
-        });
-        const cursorTime = saved && saved.c ? Date.parse(rxCursorTime(saved.c)) : NaN;
-        if (saved && saved.c && Number.isFinite(cursorTime) && cursorTime > floor) rxNtOwnCursor = saved.c;
-    }
-
-    function rxNtOwnSave(uid) {
-        const rows = [...rxNtOwnRows.values()].sort((a, b) => Date.parse(a.t) - Date.parse(b.t)).slice(-1500);
-        rxNtOwnRows.clear();
-        rows.forEach(r => rxNtOwnRows.set([r.topic, r.comment_id, r.user_id].join(':'), r));
-        LS.setJson(RX_NT_OWN_STATE_PREFIX + uid, {
-            c: rxNtOwnCursor,
-            r: rows.map(r => [r.topic, r.comment_id, r.user_id, r.comment_owner_id, r.emoji, r.t])
-        });
     }
 
     function rxNtOwnContainer() {
@@ -8844,43 +8827,28 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             if (meId == null || !meFresh) return;
         }
         const found = rxNtOwnContainer();
-        if (!found) return;
-        if (Date.now() - rxNtOwnAt < RX_NT_OWN_POLL_MS) return;
+        if (!found || Date.now() - rxNtOwnAt < RX_NT_OWN_POLL_MS) return;
         rxNtOwnBusy = true;
         rxNtOwnAt = Date.now();
         try {
-            rxNtOwnLoad(meId);
-            const floor = new Date(Date.now() - RX_NT_MIRROR_DAYS * 86400000).toISOString();
-            let cursor = rxNtOwnCursor;
-            let changed = false;
-            for (let page = 0; page < 6; page++) {
-                const cursorQuery = cursor
-                    ? '&after=' + encodeURIComponent(cursor)
-                    : '&updated_at=gt.' + encodeURIComponent(floor);
-                const rows = await rxGet('&comment_owner_id=eq.' + encodeURIComponent(meId) +
-                    cursorQuery + '&order=updated_at.asc&limit=1000');
-                if (!rows.length) {
-                    if (!cursor) cursor = JSON.stringify([new Date(Date.now() - 120000).toISOString(), '0_0', 1, 1]);
-                    break;
-                }
-                rows.forEach(r => {
-                    const key = [r.topic, r.comment_id, r.user_id].join(':');
-                    rxNtOwnRows.set(key, r);
+            const rows = [];
+            rxNtMirror.forEach((e, key) => {
+                const rid = e.m.get(Number(meId));
+                const reaction = rid && RX_BY_ID[String(rid)];
+                if (Number(e.o) !== Number(meId) || !reaction || !reaction.noLike) return;
+                const cut = key.lastIndexOf(':');
+                if (cut < 1) return;
+                rows.push({
+                    topic: key.slice(0, cut), comment_id: Number(key.slice(cut + 1)),
+                    user_id: Number(meId), emoji: String(rid), t: e.t.get(Number(meId)) || ''
                 });
-                cursor = rxCursorOf(rows[rows.length - 1]);
-                changed = true;
-                if (rows.length < 1000) break;
-            }
-            if (cursor && cursor !== rxNtOwnCursor) { rxNtOwnCursor = cursor; changed = true; }
-            if (changed) rxNtOwnSave(meId);
-
-            const displayRows = [...rxNtOwnRows.values()]
-                .filter(r => RX_BY_ID[String(r.emoji)] && RX_BY_ID[String(r.emoji)].noLike)
-                .sort((a, b) => Date.parse(b.t) - Date.parse(a.t)).slice(0, 100);
-            const users = [...new Set(displayRows.map(r => Number(r.user_id)).filter(Number.isSafeInteger))];
+            });
+            rows.sort((a, b) => Date.parse(b.t || 0) - Date.parse(a.t || 0));
+            rows.length = Math.min(rows.length, 100);
+            const users = [...new Set(rows.map(r => Number(r.user_id)).filter(Number.isSafeInteger))];
             await rxResolve(users, true);
             const fresh = rxNtOwnContainer();
-            if (fresh) rxNtOwnRender(fresh.host, fresh.item, displayRows);
+            if (fresh) rxNtOwnRender(fresh.host, fresh.item, rows);
         } catch (e) {
             rxLog('Notificações negativas próprias: erro:', e && e.message);
         } finally {
@@ -8934,7 +8902,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         rxNtBusy = true;
         try {
             const listOpen = !!document.querySelector('[data-testid="notification-text"]');
-            if (!document.hidden && RX_NT_MIRROR_EVERY_MS && Date.now() - rxNtMirrorAt >= (listOpen ? RX_NT_MIRROR_LIST_MS : RX_NT_MIRROR_EVERY_MS)) rxNtMirrorRefresh();
+            if (!document.hidden && RX_NT_MIRROR_EVERY_MS && Date.now() - rxNtMirrorAt >= (listOpen ? RX_NT_MIRROR_LIST_MS : RX_NT_MIRROR_EVERY_MS)) await rxNtMirrorRefresh();
             const pops = [...document.querySelectorAll('.notifier_baloon[class*="notifier_type_like_topic_comment"]')];
             await Promise.all(pops.map(p => rxNtPopup(p).catch(() => {})));
             if (listOpen) await rxNtListTick();
