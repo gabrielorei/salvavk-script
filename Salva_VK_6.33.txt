@@ -8837,14 +8837,20 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         try {
             const rows = [];
             rxNtMirror.forEach((e, key) => {
-                const rid = e.m.get(Number(meId));
-                const reaction = rid && RX_BY_ID[String(rid)];
-                if (Number(e.o) !== Number(meId) || !reaction || !reaction.noLike) return;
+                // A notificação pertence ao autor do comentário (e.o), mas a reação
+                // pertence a cada usuário em e.m. Não procurar a reação de meId:
+                // meId é o destinatário, não necessariamente quem reagiu.
+                if (Number(e.o) !== Number(meId)) return;
                 const cut = key.lastIndexOf(':');
                 if (cut < 1) return;
-                rows.push({
-                    topic: key.slice(0, cut), comment_id: Number(key.slice(cut + 1)),
-                    user_id: Number(meId), emoji: String(rid), t: e.t.get(Number(meId)) || ''
+                e.m.forEach((rid, uid) => {
+                    if (Number(uid) === Number(meId)) return; // não notificar a própria reação
+                    const reaction = RX_BY_ID[String(rid)];
+                    if (!reaction || !reaction.noLike) return;
+                    rows.push({
+                        topic: key.slice(0, cut), comment_id: Number(key.slice(cut + 1)),
+                        user_id: Number(uid), emoji: String(rid), t: e.t.get(Number(uid)) || ''
+                    });
                 });
             });
             rows.sort((a, b) => Date.parse(b.t || 0) - Date.parse(a.t || 0));
