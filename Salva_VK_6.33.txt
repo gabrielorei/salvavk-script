@@ -8879,17 +8879,14 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 rxNtOwnAt = Date.now();
 
                 const users = [...new Set(rows.map(r => Number(r.user_id)).filter(Number.isSafeInteger))];
-                await rxResolve(users, true);
-
-                // Pré-carrega as prévias em segundo plano, com no máximo quatro chamadas simultâneas.
-                let next = 0;
-                const workers = Array.from({ length: Math.min(4, rows.length) }, async () => {
-                    while (next < rows.length) await rxNtOwnCommentText(rows[next++]);
-                });
-                await Promise.all(workers);
+                // Resolve os usuários em paralelo; não bloquear a inserção por consultas de perfil.
+                rxResolve(users, true).then(() => {
+                    const ready = rxNtOwnContainer();
+                    if (ready) rxNtOwnRender(ready.host, ready.item, rxNtOwnRows);
+                }).catch(() => {});
             }
 
-            // Se o VK acabou de montar a lista, injeta imediatamente o conteúdo já preparado.
+            // A inserção visual nunca espera pelas consultas dos comentários.
             const fresh = rxNtOwnContainer();
             if (fresh && Date.now() - rxNtOwnRenderedAt >= 1200) {
                 rxNtOwnRender(fresh.host, fresh.item, rxNtOwnRows);
