@@ -8660,24 +8660,40 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     function rxNtSched() {
         if (rxNtRaf) return;
         rxNtRaf = true;
-        requestAnimationFrame(() => { rxNtRaf = false; rxNtListQuick(); });
+        requestAnimationFrame(() => { rxNtRaf = false; rxNtListQuick(); safe(rxNtOwnTick); });
     }
     try { new MutationObserver(rxNtSched).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
 
     // ----- Notificações próprias para reações negativas -----
     // Renderiza apenas reações negativas presentes no espelho incremental já sincronizado com o D1.
     const RX_NT_OWN_PREFIX = 'notification-item-salvavk-';
-    const RX_NT_OWN_POLL_MS = 30000;
+    const RX_NT_OWN_PREPARE_MS = 10000; // prepara em segundo plano, sem depender da abertura da aba
     const RX_NT_OWN_COMMENT_KEY = 'vk_arx_nt_own_comments_v1';
-    let rxNtOwnAt = 0, rxNtOwnBusy = false;
+    let rxNtOwnAt = 0, rxNtOwnBusy = false, rxNtOwnRows = [];
     const rxNtOwnComments = new Map();
     const rxNtOwnCommentPending = new Map();
+    const rxNtOwnCommentRetry = new Map();
     {
         const saved = LS.json(RX_NT_OWN_COMMENT_KEY);
         if (Array.isArray(saved)) saved.forEach(a => {
-            if (Array.isArray(a) && a.length >= 2) rxNtOwnComments.set(String(a[0]), String(a[1]));
+            if (Array.isArray(a) && a.length >= 2 && String(a[1]) !== 'Comentário indisponível') {
+                rxNtOwnComments.set(String(a[0]), String(a[1]));
+            }
         });
     }
+
+    // Ao clicar no item próprio, mantém a navegação para o comentário e fecha o painel do VK.
+    document.addEventListener('click', e => {
+        const link = e.target && e.target.closest ? e.target.closest('a[data-ar-nt-own-link]') : null;
+        if (!link) return;
+        setTimeout(() => {
+            try {
+                const esc = { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true };
+                document.dispatchEvent(new KeyboardEvent('keydown', esc));
+                document.dispatchEvent(new KeyboardEvent('keyup', esc));
+            } catch (err) {}
+        }, 80);
+    }, true);
 
     function rxNtOwnTime(value) {
         const t = Date.parse(value || '');
@@ -8705,10 +8721,11 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         const key = String(row.topic) + ':' + String(row.comment_id);
         if (rxNtOwnComments.has(key)) return Promise.resolve(rxNtOwnComments.get(key));
         if (rxNtOwnCommentPending.has(key)) return rxNtOwnCommentPending.get(key);
+        if (Date.now() < (rxNtOwnCommentRetry.get(key) || 0)) return Promise.resolve('Carregando comentário…');
         const pending = (async () => {
-            let value = 'Comentário indisponível', cacheable = false;
+            let value = 'Comentário indisponível no momento', found = false;
             try {
-                const m = String(row.topic).match(/^(-?\d+)_(\d+)$/);
+                const m = String(row.topic).match(/^(-?\\d+)_(\\d+)$/);
                 if (!m) throw new Error('tópico inválido');
                 const result = await apiCall('board.getComments', {
                     group_id: Number(m[1]), topic_id: Number(m[2]),
@@ -8719,15 +8736,19 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 if (comment) {
                     value = String(comment.text || comment.message || '').trim() ||
                         (comment.attachments && comment.attachments.length ? 'Comentário com anexo' : 'Comentário sem texto');
-                    cacheable = true;
-                } else cacheable = true;
+                    found = true;
+                } else rxLog('A API não retornou o comentário ' + row.comment_id + '; nova tentativa será feita depois.');
             } catch (e) {
                 rxLog('Não foi possível carregar o comentário ' + row.comment_id + ':', e && e.message);
             }
-            if (cacheable) {
+            if (found) {
                 rxNtOwnComments.set(key, value);
+                rxNtOwnCommentRetry.delete(key);
                 if (rxNtOwnComments.size > 500) rxNtOwnComments.delete(rxNtOwnComments.keys().next().value);
                 LS.setJson(RX_NT_OWN_COMMENT_KEY, [...rxNtOwnComments].slice(-500));
+            } else {
+                // Falhas e resultados vazios são temporários: não gravar no cache definitivo.
+                rxNtOwnCommentRetry.set(key, Date.now() + 60000);
             }
             return value;
         })();
@@ -8826,39 +8847,49 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     async function rxNtOwnTick() {
         if (rxNtOwnBusy) return;
-        if (meId == null || !meFresh) {
-            await learnMeApi();
-            if (meId == null || !meFresh) return;
-        }
-        const found = rxNtOwnContainer();
-        if (!found || Date.now() - rxNtOwnAt < RX_NT_OWN_POLL_MS) return;
         rxNtOwnBusy = true;
-        rxNtOwnAt = Date.now();
         try {
-            const rows = [];
-            rxNtMirror.forEach((e, key) => {
-                // A notificação pertence ao autor do comentário (e.o), mas a reação
-                // pertence a cada usuário em e.m. Não procurar a reação de meId:
-                // meId é o destinatário, não necessariamente quem reagiu.
-                if (Number(e.o) !== Number(meId)) return;
-                const cut = key.lastIndexOf(':');
-                if (cut < 1) return;
-                e.m.forEach((rid, uid) => {
-                    if (Number(uid) === Number(meId)) return; // não notificar a própria reação
-                    const reaction = RX_BY_ID[String(rid)];
-                    if (!reaction || !reaction.noLike) return;
-                    rows.push({
-                        topic: key.slice(0, cut), comment_id: Number(key.slice(cut + 1)),
-                        user_id: Number(uid), emoji: String(rid), t: e.t.get(Number(uid)) || ''
+            if (meId == null || !meFresh) {
+                await learnMeApi();
+                if (meId == null || !meFresh) return;
+            }
+
+            // Atualiza a lista preparada mesmo com o painel fechado.
+            if (!rxNtOwnAt || Date.now() - rxNtOwnAt >= RX_NT_OWN_PREPARE_MS) {
+                const rows = [];
+                rxNtMirror.forEach((e, key) => {
+                    if (Number(e.o) !== Number(meId)) return;
+                    const cut = key.lastIndexOf(':');
+                    if (cut < 1) return;
+                    e.m.forEach((rid, uid) => {
+                        if (Number(uid) === Number(meId)) return;
+                        const reaction = RX_BY_ID[String(rid)];
+                        if (!reaction || !reaction.noLike) return;
+                        rows.push({
+                            topic: key.slice(0, cut), comment_id: Number(key.slice(cut + 1)),
+                            user_id: Number(uid), emoji: String(rid), t: e.t.get(Number(uid)) || ''
+                        });
                     });
                 });
-            });
-            rows.sort((a, b) => Date.parse(b.t || 0) - Date.parse(a.t || 0));
-            rows.length = Math.min(rows.length, 100);
-            const users = [...new Set(rows.map(r => Number(r.user_id)).filter(Number.isSafeInteger))];
-            await rxResolve(users, true);
+                rows.sort((a, b) => Date.parse(b.t || 0) - Date.parse(a.t || 0));
+                rows.length = Math.min(rows.length, 100);
+                rxNtOwnRows = rows;
+                rxNtOwnAt = Date.now();
+
+                const users = [...new Set(rows.map(r => Number(r.user_id)).filter(Number.isSafeInteger))];
+                await rxResolve(users, true);
+
+                // Pré-carrega as prévias em segundo plano, com no máximo quatro chamadas simultâneas.
+                let next = 0;
+                const workers = Array.from({ length: Math.min(4, rows.length) }, async () => {
+                    while (next < rows.length) await rxNtOwnCommentText(rows[next++]);
+                });
+                await Promise.all(workers);
+            }
+
+            // Se o VK acabou de montar a lista, injeta imediatamente o conteúdo já preparado.
             const fresh = rxNtOwnContainer();
-            if (fresh) rxNtOwnRender(fresh.host, fresh.item, rows);
+            if (fresh) rxNtOwnRender(fresh.host, fresh.item, rxNtOwnRows);
         } catch (e) {
             rxLog('Notificações negativas próprias: erro:', e && e.message);
         } finally {
@@ -8903,7 +8934,6 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         }));
         if (users.size) { try { await rxNtEnsureUsers([...users]); } catch (e) { rxLog('Notificação (janela): erro ao buscar nomes:', e && e.message); } }
         if (need.size || users.size) rxNtSched();
-        await rxNtOwnTick();
     }
 
     let rxNtBusy = false;
@@ -8916,6 +8946,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             const pops = [...document.querySelectorAll('.notifier_baloon[class*="notifier_type_like_topic_comment"]')];
             await Promise.all(pops.map(p => rxNtPopup(p).catch(() => {})));
             if (listOpen) await rxNtListTick();
+            await rxNtOwnTick();
         } finally {
             rxNtBusy = false;
         }
