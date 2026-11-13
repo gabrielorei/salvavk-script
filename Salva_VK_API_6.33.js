@@ -24,6 +24,11 @@ function validId(value) {
   const n = Number(value);
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
+function validCommentOwnerId(value) {
+  if (typeof value !== "number" && !(typeof value === "string" && /^-?[1-9]\\d*$/.test(value))) return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n !== 0 ? n : null;
+}
 function validTopic(value) { return typeof value === "string" && TOPIC_RE.test(value); }
 function parseIds(raw) {
   const m = String(raw || "").match(/^in\.\(([\d,]+)\)$/);
@@ -127,7 +132,7 @@ export default {
           : "comment_id ASC, user_id ASC";
 
         const result = await env.DB.prepare(`
-          SELECT topic, comment_id, user_id, emoji, updated_at
+          SELECT topic, comment_id, user_id, comment_owner_id, emoji, updated_at
           FROM reactions
           ${where.length ? "WHERE " + where.join(" AND ") : ""}
           ORDER BY ${orderSql}
@@ -135,23 +140,26 @@ export default {
         `).bind(...values, limit, offset).all();
 
         const rows = result.results || [];
-        const lines = rows.map(r => [r.topic, r.comment_id, r.user_id, r.emoji, r.updated_at].map(csvValue).join(","));
-        return response(["topic,comment_id,user_id,emoji,updated_at", ...lines].join("\n"), 200, "text/csv; charset=utf-8");
+        const lines = rows.map(r => [r.topic, r.comment_id, r.user_id, r.comment_owner_id, r.emoji, r.updated_at].map(csvValue).join(","));
+        return response(["topic,comment_id,user_id,comment_owner_id,emoji,updated_at", ...lines].join("\n"), 200, "text/csv; charset=utf-8");
       }
 
       if (method === "POST") {
         const data = await request.json();
-        const { topic, comment_id, user_id, emoji } = data || {};
-        const cid = validId(comment_id), uid = validId(user_id), em = String(emoji);
-        if (!validTopic(topic) || cid === null || uid === null || !EMOJIS.has(em) || em === "0") {
+        const { topic, comment_id, user_id, comment_owner_id, emoji } = data || {};
+        const cid = validId(comment_id), uid = validId(user_id), ownerId = comment_owner_id == null ? null : validCommentOwnerId(comment_owner_id), em = String(emoji);
+        if (!validTopic(topic) || cid === null || uid === null || (comment_owner_id != null && ownerId === null) || !EMOJIS.has(em) || em === "0") {
           return json({ error: "Dados de reação inválidos" }, 400);
         }
         await env.DB.prepare(`
-          INSERT INTO reactions (topic, comment_id, user_id, emoji, updated_at)
-          VALUES (?, ?, ?, ?, (${NEXT_TIMESTAMP_SQL}))
+          INSERT INTO reactions (topic, comment_id, user_id, comment_owner_id, emoji, updated_at)
+          VALUES (?, ?, ?, ?, ?, (${NEXT_TIMESTAMP_SQL}))
           ON CONFLICT(topic, comment_id, user_id)
-          DO UPDATE SET emoji = excluded.emoji, updated_at = (${NEXT_TIMESTAMP_SQL})
-        `).bind(topic, cid, uid, em).run();
+          DO UPDATE SET
+            comment_owner_id = COALESCE(excluded.comment_owner_id, reactions.comment_owner_id),
+            emoji = excluded.emoji,
+            updated_at = (${NEXT_TIMESTAMP_SQL})
+        `).bind(topic, cid, uid, ownerId, em).run();
         return new Response(null, { status: 204, headers: cors });
       }
 
