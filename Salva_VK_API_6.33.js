@@ -68,6 +68,15 @@ export default {
         const where = [], values = [];
         if (topic !== null) { where.push("topic = ?"); values.push(topic); }
 
+        const ownerParam = url.searchParams.get("comment_owner_id");
+        if (ownerParam !== null) {
+          if (!ownerParam.startsWith("eq.")) return json({ error: "Autor do comentário inválido" }, 400);
+          const ownerId = validCommentOwnerId(ownerParam.slice(3));
+          if (ownerId === null) return json({ error: "Autor do comentário inválido" }, 400);
+          where.push("comment_owner_id = ?");
+          values.push(ownerId);
+        }
+
         const or = url.searchParams.get("or") || "";
         const filters = [];
         const range = or.match(/and\(comment_id\.gte\.(\d+),comment_id\.lte\.(\d+)\)/);
@@ -105,7 +114,12 @@ export default {
 
         const emoji = url.searchParams.get("emoji");
         if (emoji === "neq.0") where.push("emoji <> '0'");
-        else if (emoji !== null) return json({ error: "Filtro de emoji inválido" }, 400);
+        else if (emoji && emoji.startsWith("in.(") && emoji.endsWith(")")) {
+          const ids = emoji.slice(4, -1).split(",");
+          if (!ids.length || ids.some(id => !EMOJIS.has(id) || id === "0")) return json({ error: "Filtro de emoji inválido" }, 400);
+          where.push("emoji IN (" + ids.map(() => "?").join(",") + ")");
+          values.push(...ids);
+        } else if (emoji !== null) return json({ error: "Filtro de emoji inválido" }, 400);
 
         const afterRaw = url.searchParams.get("after");
         const after = parseAfter(afterRaw);
@@ -129,7 +143,9 @@ export default {
         const order = url.searchParams.get("order") || "comment_id.asc";
         const orderSql = order.startsWith("updated_at.asc")
           ? "updated_at ASC, topic ASC, comment_id ASC, user_id ASC"
-          : "comment_id ASC, user_id ASC";
+          : order.startsWith("updated_at.desc")
+            ? "updated_at DESC, topic DESC, comment_id DESC, user_id DESC"
+            : "comment_id ASC, user_id ASC";
 
         const result = await env.DB.prepare(`
           SELECT topic, comment_id, user_id, comment_owner_id, emoji, updated_at
