@@ -8737,7 +8737,13 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     }
 
     async function rxNtOwnTick() {
-        if (rxNtOwnBusy || meId == null || !meFresh) return;
+        if (rxNtOwnBusy) return;
+        // A identidade também precisa ser confirmada na própria aba de notificações:
+        // rxPoll() só faz isso dentro de tópicos e, portanto, não roda nesta tela.
+        if (meId == null || !meFresh) {
+            await learnMeApi();
+            if (meId == null || !meFresh) return;
+        }
         const found = rxNtOwnContainer();
         if (!found) return;
         if (Date.now() - rxNtOwnAt < 15000) return;
