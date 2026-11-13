@@ -7209,7 +7209,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     const RX_NT_LIST_RETRY_MS = [4000, 10000, 30000];      // janela: idem; esgotadas, só olha de novo a cada 2 min
     const RX_NT_MIRROR_DAYS = 3;                // espelho local: reações dos últimos N dias
     const RX_NT_MIRROR_EVERY_MS = 60000;        // atualização do espelho (só o que mudou); 0 = desliga
-    const RX_NT_MIRROR_LIST_MS = 15000;         // idem, com a janela de notificações aberta
+    const RX_NT_MIRROR_LIST_MS = 30000;         // idem, com a janela de notificações aberta
     const RX_NT = { title: 'Alguém Reagiu ao Seu Comentário', verbOne: 'reagiu', verbMany: 'reagiram', with: 'com', tail: 'ao seu comentário' };
     const RX_NT_LIKE_RE = /(curti|like|оцени|понрав)[\s\S]*?(coment|comment|комментар)/i;   // "curtiu seu comentário" (pt, en, ru)
     // ========================
@@ -8707,7 +8707,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         if (rxNtOwnComments.has(key)) return Promise.resolve(rxNtOwnComments.get(key));
         if (rxNtOwnCommentPending.has(key)) return rxNtOwnCommentPending.get(key);
         const pending = (async () => {
-            let value = 'Comentário indisponível';
+            let value = 'Comentário indisponível', cacheable = false;
             try {
                 const m = String(row.topic).match(/^(-?\d+)_(\d+)$/);
                 if (!m) throw new Error('tópico inválido');
@@ -8717,14 +8717,19 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 });
                 const items = Array.isArray(result) ? result : (result && Array.isArray(result.items) ? result.items : []);
                 const comment = items.find(x => Number(x.comment_id != null ? x.comment_id : x.id) === Number(row.comment_id));
-                if (comment) value = String(comment.text || comment.message || '').trim() ||
-                    (comment.attachments && comment.attachments.length ? 'Comentário com anexo' : 'Comentário sem texto');
+                if (comment) {
+                    value = String(comment.text || comment.message || '').trim() ||
+                        (comment.attachments && comment.attachments.length ? 'Comentário com anexo' : 'Comentário sem texto');
+                    cacheable = true;
+                } else cacheable = true;
             } catch (e) {
                 rxLog('Não foi possível carregar o comentário ' + row.comment_id + ':', e && e.message);
             }
-            rxNtOwnComments.set(key, value);
-            if (rxNtOwnComments.size > 500) rxNtOwnComments.delete(rxNtOwnComments.keys().next().value);
-            LS.setJson(RX_NT_OWN_COMMENT_KEY, [...rxNtOwnComments].slice(-500));
+            if (cacheable) {
+                rxNtOwnComments.set(key, value);
+                if (rxNtOwnComments.size > 500) rxNtOwnComments.delete(rxNtOwnComments.keys().next().value);
+                LS.setJson(RX_NT_OWN_COMMENT_KEY, [...rxNtOwnComments].slice(-500));
+            }
             return value;
         })();
         rxNtOwnCommentPending.set(key, pending);
@@ -8753,7 +8758,8 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 oldLink.setAttribute('data-ar-nt-own-link', '1');
                 const menu = item.querySelector('[data-testid="notification-menu"]');
                 if (menu) menu.remove();
-                item.querySelectorAll('[data-ar-nt-hide], [data-ar-nt-list], .ar-nt-bd').forEach(n => n.remove());
+                item.querySelectorAll('[data-ar-nt-list], .ar-nt-bd').forEach(n => n.remove());
+                item.querySelectorAll('[data-ar-nt-hide]').forEach(n => n.removeAttribute('data-ar-nt-hide'));
                 item.querySelectorAll('[data-ar-nt-hide]').forEach(n => n.removeAttribute('data-ar-nt-hide'));
                 host.insertBefore(item, template);
             }
