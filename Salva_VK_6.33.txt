@@ -7330,8 +7330,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     // ---------- Quem é você ----------
     const ME_KEY = 'vk_ar_me_id';
+    // Não reutiliza o ID salvo: o localStorage é compartilhado entre contas do VK no mesmo navegador.
+    // Cada sessão precisa confirmar o usuário atual pela API antes de gravar reações.
     let meId = null, meFresh = false, meTries = 0, meAt = 0;
-    { const v = LS.get(ME_KEY); if (v) meId = Number(v) || null; }
 
     async function learnMeApi() {
         if (meFresh || !base || meTries >= 5 || Date.now() - meAt < 30000) return;
@@ -7753,6 +7754,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     // Grava (sid = '2'..'99') ou apaga (sid = null) a SUA reação; aparece na hora e desfaz se falhar
     // Apagar = marcar emoji '0' (e não DELETE), para a leitura por delta das outras telas enxergar a remoção
     async function rxSet(cid, sid) {
+        if (!meFresh || meId == null) throw new Error('usuário ainda não foi confirmado pela API do VK');
         const key = topicKey();
         if (!key) return;
         rx.local.set(cid, { id: sid, at: Date.now() });
@@ -7774,7 +7776,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     async function rxChoose(card, rid) {
         const cid = rxCardId(card);
         if (!Number.isFinite(cid) || !topicKey() || rx.acting.has(cid)) return;
-        if (meId == null) { learnMeApi(); toast('⚠ reações: ainda não sei quem é você; tente de novo em instantes'); return; }
+        if (meId == null || !meFresh) { learnMeApi(); toast('⚠ confirmando sua conta do VK; tente reagir novamente em instantes'); return; }
         rx.acting.add(cid);
         try {
             const liked = rxIsLiked(card), cur = rxView(cid).mine;
