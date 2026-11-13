@@ -8332,7 +8332,8 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             const floor = Date.now() - RX_NT_MIRROR_DAYS * 86400000;
             const savedTime = rxNtCursor ? Date.parse(rxCursorTime(rxNtCursor)) : NaN;
             let since = rxNtCursor && Number.isFinite(savedTime) && savedTime > floor ? rxNtCursor : new Date(floor).toISOString();
-            if (since !== rxNtCursor) rxNtMirror.clear(); // cursor ausente/antigo: reconstrói a janela de N dias
+            const reset = since !== rxNtCursor;
+            if (reset) rxNtMirror.clear(); // cursor ausente/antigo: reconstrói a janela de N dias
             let n = 0;
             for (let page = 0; page < 6; page++) {
                 const tuple = rxCursorParts(since);
@@ -8344,8 +8345,8 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 if (rows.length < 1000) break;
             }
             rxNtCursor = since;
-            if (n) { rxNtMirrorSave(); rxNtSched(); }
-            else if (!LS.get(RX_NT_MIRROR_KEY)) rxNtMirrorSave();
+            if (n || reset) rxNtMirrorSave();
+            if (n) rxNtSched();
             if (n) rxLog('Espelho das reações: +' + n + ' linha(s)');
         } catch (e) {
             rxLog('Espelho das reações: erro:', e && e.message);
@@ -8356,7 +8357,11 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     // Leitura completa de alguns comentários de um tópico, numa única consulta; grava no espelho (inclusive os sem reação)
     async function rxNtBatch(key, cids) {
-        const rows = await rxGet('&limit=1000&topic=eq.' + key + '&comment_id=in.(' + cids.join(',') + ')&emoji=neq.0');
+        const rows = [];
+        for (let i = 0; i < cids.length; i += 100) {
+            const batch = cids.slice(i, i + 100);
+            rows.push(...await rxGet('&limit=1000&topic=eq.' + key + '&comment_id=in.(' + batch.join(',') + ')&emoji=neq.0'));
+        }
         const fresh = new Map();
         cids.forEach(c => fresh.set(c, new Map()));
         rows.forEach(r => { const m = fresh.get(r.comment_id); if (m) m.set(r.user_id, String(r.emoji)); });
