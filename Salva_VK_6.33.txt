@@ -8665,8 +8665,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     try { new MutationObserver(rxNtSched).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
 
     // ----- Notificações próprias para reações negativas -----
-    // Atualização incremental por cursor D1; inclui emoji 0/positivos para retirar avisos antigos.
-    const RX_NT_OWN_IDS = RX_LIST.filter(r => r.noLike).map(r => String(r.id));
+    // Renderiza apenas reações negativas presentes no espelho incremental já sincronizado com o D1.
     const RX_NT_OWN_PREFIX = 'notification-item-salvavk-';
     const RX_NT_OWN_POLL_MS = 30000;
     const RX_NT_OWN_COMMENT_KEY = 'vk_arx_nt_own_comments_v1';
@@ -8759,7 +8758,6 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 const menu = item.querySelector('[data-testid="notification-menu"]');
                 if (menu) menu.remove();
                 item.querySelectorAll('[data-ar-nt-list], .ar-nt-bd').forEach(n => n.remove());
-                item.querySelectorAll('[data-ar-nt-hide]').forEach(n => n.removeAttribute('data-ar-nt-hide'));
                 item.querySelectorAll('[data-ar-nt-hide]').forEach(n => n.removeAttribute('data-ar-nt-hide'));
                 host.insertBefore(item, template);
             }
