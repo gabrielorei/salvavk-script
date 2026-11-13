@@ -7339,6 +7339,22 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         return { id: Number(u.id), name: [u.first_name, u.last_name].filter(Boolean).join(' '), screen_name: u.screen_name || String(screenName) };
     };
 
+    // Resolve o autor do comentário para guardar quem deve receber a notificação.
+    async function rxCommentOwnerId(card) {
+        const a = card && card.querySelector('[data-testid="comment-owner"]');
+        if (!a) throw new Error('não consegui identificar o autor deste comentário');
+        const href = String(a.getAttribute('href') || a.href || '').trim();
+        const path = href.replace(/^https?:\/\/[^/]+/i, '').split(/[?#]/)[0].replace(/\/+$/, '');
+        let m = path.match(/^\/(?:id|club|public)(\d+)$/i);
+        if (m) return /^\/(?:club|public)/i.test(path) ? -Number(m[1]) : Number(m[1]);
+        const screenName = path.replace(/^\//, '');
+        if (!screenName || screenName.includes('/')) throw new Error('endereço do autor não reconhecido');
+        const r = await apiCall('users.get', { user_ids: screenName });
+        const u = Array.isArray(r) ? r[0] : (r && Array.isArray(r.items) ? r.items[0] : null);
+        if (!u || !u.id) throw new Error('não consegui resolver o ID do autor do comentário');
+        return Number(u.id);
+    }
+
     // ---------- Quem é você ----------
     const ME_KEY = 'vk_ar_me_id';
     // Não reutiliza o ID salvo: o localStorage é compartilhado entre contas do VK no mesmo navegador.
@@ -7470,16 +7486,17 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     }
 
     // Leitor CSV compatível com o Worker D1: topic, comment_id, user_id, emoji, updated_at.
-    const RX_SEL = '?select=topic,comment_id,user_id,emoji,updated_at';
+    const RX_SEL = '?select=topic,comment_id,user_id,comment_owner_id,emoji,updated_at';
     function rxParseCsv(txt) {
         const out = [];
         String(txt || '').split(/\r?\n/).forEach(line => {
             if (!line || /^(?:topic,|comment_id,)/.test(line)) return;
             const p = line.split(',').map(s => s.replace(/^\"|\"$/g, '').replace(/\"\"/g, '\"'));
+            if (p.length === 5) p.splice(3, 0, ''); // compatibilidade com registros antigos sem comment_owner_id
             if (p.length === 4) p.unshift(''); // compatibilidade temporária com respostas antigas de quatro colunas
             const cid = Number(p[1]), uid = Number(p[2]);
             if (!Number.isSafeInteger(cid) || !Number.isSafeInteger(uid)) return;
-            out.push({ topic: p[0], comment_id: cid, user_id: uid, emoji: p[3], t: p[4] || '' });
+            out.push({ topic: p[0], comment_id: cid, user_id: uid, comment_owner_id: Number(p[3]) || null, emoji: p[4], t: p[5] || '' });
         });
         return out;
     }
@@ -7764,14 +7781,14 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     // Grava (sid = '2'..'99') ou apaga (sid = null) a SUA reação; aparece na hora e desfaz se falhar
     // Apagar = marcar emoji '0' (e não DELETE), para a leitura por delta das outras telas enxergar a remoção
-    async function rxSet(cid, sid) {
+    async function rxSet(cid, sid, commentOwnerId) {
         if (!meFresh || meId == null) throw new Error('usuário ainda não foi confirmado pela API do VK');
         const key = topicKey();
         if (!key) return;
         rx.local.set(cid, { id: sid, at: Date.now() });
         rxSync();
         try {
-            if (sid) await rxReq('POST', '?on_conflict=topic,comment_id,user_id', { topic: key, comment_id: cid, user_id: Number(meId), emoji: sid }, 'resolution=merge-duplicates');
+            if (sid) await rxReq('POST', '?on_conflict=topic,comment_id,user_id', { topic: key, comment_id: cid, user_id: Number(meId), comment_owner_id: Number(commentOwnerId), emoji: sid }, 'resolution=merge-duplicates');
             else await rxReq('PATCH', '?topic=eq.' + key + '&comment_id=eq.' + cid + '&user_id=eq.' + Number(meId), { emoji: '0' });
             rxBoost();
             rxLog('Comentário ' + cid + ' → ' + (sid && RX_BY_ID[sid] ? RX_BY_ID[sid].name : 'sem reação'));
@@ -7798,9 +7815,10 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 if (liked) rxToggleLike(card);                                         // a mesma reação de novo: remove tudo
                 await rxSet(cid, null);
             } else {
+                const commentOwnerId = await rxCommentOwnerId(card);
                 const wantLike = !(RX_BY_ID[String(rid)] || {}).noLike;                // positiva: curte no VK; negativa: sem curtida
                 if (liked !== wantLike) rxToggleLike(card);
-                await rxSet(cid, String(rid));
+                await rxSet(cid, String(rid), commentOwnerId);
             }
         } finally {
             rx.acting.delete(cid);
