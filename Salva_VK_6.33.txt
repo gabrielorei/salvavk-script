@@ -7258,8 +7258,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     // ---------- Credenciais da API do VK (aprendidas das chamadas da própria página) ----------
     const BASE_KEY = 'vk_arx_base_v1', BASE_MAX_AGE_MS = 24 * 3600 * 1000;
     const BASE_KEYS = ['access_token', 'v', 'lang', 'device_id', 'client_id'];
-    let base = null;   // { origin, headers, pairs }
-    { const s = LS.json(BASE_KEY); if (s && s.base && Date.now() - s.t < BASE_MAX_AGE_MS) base = s.base; }
+    // Não carrega credenciais compartilhadas: outra conta do VK pode ter gravado outro token
+    // no mesmo localStorage. A identidade deve usar somente o token capturado nesta aba.
+    let base = null;   // { origin, headers, pairs } — preenchido por learnBase() nesta sessão
 
     function normHeaders(h) {
         const o = {};
