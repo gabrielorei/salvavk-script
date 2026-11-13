@@ -6,9 +6,9 @@ const cors = {
 };
 
 const EMOJIS = new Set(["0", "2", "3", "26", "19", "39", "22", "17", "7", "31"]);
-const TOPIC_RE = /^[\\w-]{1,80}$/;
-const ID_RE = /^[1-9]\\d*$/;
-const TS_RE = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/;
+const TOPIC_RE = /^[\w-]{1,80}$/;
+const ID_RE = /^[1-9]\d*$/;
+const TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const NEXT_TIMESTAMP_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ', max(julianday('now'), COALESCE((SELECT MAX(julianday(updated_at)) FROM reactions), 0) + 0.00000002))";
 
 function response(body, status = 200, type = "application/json") {
@@ -25,7 +25,7 @@ function validId(value) {
 }
 function validTopic(value) { return typeof value === "string" && TOPIC_RE.test(value); }
 function parseIds(raw) {
-  const m = String(raw || "").match(/^in\\.\\(([\\d,]+)\\)$/);
+  const m = String(raw || "").match(/^in\.\(([\d,]+)\)$/);
   if (!m) return null;
   const ids = m[1].split(",").map(validId);
   return ids.length && ids.length <= 100 && ids.every(x => x !== null) ? ids : null;
@@ -64,13 +64,13 @@ export default {
 
         const or = url.searchParams.get("or") || "";
         const filters = [];
-        const range = or.match(/and\\(comment_id\\.gte\\.(\\d+),comment_id\\.lte\\.(\\d+)\\)/);
+        const range = or.match(/and\(comment_id\.gte\.(\d+),comment_id\.lte\.(\d+)\)/);
         if (range) {
           const lo = validId(range[1]), hi = validId(range[2]);
           if (lo === null || hi === null || hi < lo) return json({ error: "Faixa inválida" }, 400);
           filters.push({ sql: "comment_id BETWEEN ? AND ?", args: [lo, hi] });
         }
-        const inside = or.match(/comment_id\\.in\\.\\(([\\d,]+)\\)/);
+        const inside = or.match(/comment_id\.in\.\(([\d,]+)\)/);
         if (inside) {
           const ids = parseIds("in.(" + inside[1] + ")");
           if (!ids) return json({ error: "IDs inválidos" }, 400);
