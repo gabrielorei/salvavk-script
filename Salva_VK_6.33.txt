@@ -8338,7 +8338,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             if (e.ft) f.push(k);
         });
         rxNtSavedAt = Date.now();
-        LS.setJson(RX_NT_MIRROR_KEY, { c: rxNtCursor, r: r.slice(-8000), f: f.slice(-4000) });
+        LS.setJson(RX_NT_MIRROR_KEY, { c: r.length > 8000 ? null : rxNtCursor, r: r.slice(-8000), f: f.slice(-4000) });
     }
 
     async function rxNtMirrorRefresh() {
