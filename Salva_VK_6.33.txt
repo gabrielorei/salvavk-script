@@ -7492,8 +7492,8 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         String(txt || '').split(/\r?\n/).forEach(line => {
             if (!line || /^(?:topic,|comment_id,)/.test(line)) return;
             const p = line.split(',').map(s => s.replace(/^\"|\"$/g, '').replace(/\"\"/g, '\"'));
-            if (p.length === 5) p.splice(3, 0, ''); // compatibilidade com registros antigos sem comment_owner_id
-            if (p.length === 4) p.unshift(''); // compatibilidade temporária com respostas antigas de quatro colunas
+            if (p.length === 4) { p.unshift(''); p.splice(3, 0, ''); } // formato antigo sem topic e sem comment_owner_id
+            else if (p.length === 5) p.splice(3, 0, ''); // formato anterior sem comment_owner_id
             const cid = Number(p[1]), uid = Number(p[2]);
             if (!Number.isSafeInteger(cid) || !Number.isSafeInteger(uid)) return;
             out.push({ topic: p[0], comment_id: cid, user_id: uid, comment_owner_id: Number(p[3]) || null, emoji: p[4], t: p[5] || '' });
