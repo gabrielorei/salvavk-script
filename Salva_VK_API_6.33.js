@@ -9,7 +9,7 @@ const EMOJIS = new Set(["0", "2", "3", "26", "19", "39", "22", "17", "7", "31"])
 const TOPIC_RE = /^[\w-]{1,80}$/;
 const ID_RE = /^[1-9]\d*$/;
 const TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const NEXT_TIMESTAMP_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ', max(julianday('now'), COALESCE((SELECT MAX(julianday(updated_at)) FROM reactions), 0) + 0.00000002))";
+const NEXT_TIMESTAMP_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ', max(julianday('now'), COALESCE(julianday((SELECT MAX(updated_at) FROM reactions)), 0) + 0.00000002))";
 
 function response(body, status = 200, type = "application/json") {
   return new Response(body, { status, headers: { ...cors, "Content-Type": type, "Cache-Control": "no-store" } });
@@ -20,6 +20,7 @@ function csvValue(value) {
   return '"' + s.replace(/"/g, '""') + '"';
 }
 function validId(value) {
+  if (typeof value !== "number" && !(typeof value === "string" && ID_RE.test(value))) return null;
   const n = Number(value);
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
@@ -36,7 +37,7 @@ function parseAfter(raw) {
     const a = JSON.parse(raw);
     if (!Array.isArray(a) || a.length !== 4) return false;
     const [ts, topic, cid, uid] = a;
-    if (typeof ts !== "string" || !Number.isFinite(Date.parse(ts)) || !validTopic(topic)) return false;
+    if (typeof ts !== "string" || !TS_RE.test(ts) || !Number.isFinite(Date.parse(ts)) || !validTopic(topic)) return false;
     const c = validId(cid), u = validId(uid);
     return c === null || u === null ? false : [ts, topic, c, u];
   } catch (_) { return false; }
