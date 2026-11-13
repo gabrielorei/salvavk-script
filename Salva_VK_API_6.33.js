@@ -105,7 +105,7 @@ export default {
             if (!ids) return json({ error: "IDs inválidos" }, 400);
             where.push("comment_id IN (" + ids.map(() => "?").join(",") + ")");
             values.push(...ids);
-          } else if (topic !== null) {
+          } else if (topic !== null && !url.searchParams.has("after") && !url.searchParams.has("updated_at")) {
             return json({ error: "Filtro de comentários ausente" }, 400);
           }
         } else {
