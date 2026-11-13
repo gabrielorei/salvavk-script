@@ -8652,11 +8652,23 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     try { new MutationObserver(rxNtSched).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
 
     // ----- Notificações próprias para reações negativas -----
-    // O VK não cria notificações para estas reações. Criamos itens visuais na mesma lista,
-    // usando um item nativo como molde, sem chamar a API de curtidas.
+    // Atualização incremental por cursor D1; inclui emoji 0/positivos para retirar avisos antigos.
     const RX_NT_OWN_IDS = RX_LIST.filter(r => r.noLike).map(r => String(r.id));
     const RX_NT_OWN_PREFIX = 'notification-item-salvavk-';
-    let rxNtOwnAt = 0, rxNtOwnBusy = false;
+    const RX_NT_OWN_POLL_MS = 30000;
+    const RX_NT_OWN_STATE_PREFIX = 'vk_arx_nt_own_v2_';
+    const RX_NT_OWN_COMMENT_KEY = 'vk_arx_nt_own_comments_v1';
+    let rxNtOwnAt = 0, rxNtOwnBusy = false, rxNtOwnLoadedFor = null;
+    let rxNtOwnCursor = null;
+    const rxNtOwnRows = new Map();
+    const rxNtOwnComments = new Map();
+    const rxNtOwnCommentPending = new Map();
+    {
+        const saved = LS.json(RX_NT_OWN_COMMENT_KEY);
+        if (Array.isArray(saved)) saved.forEach(a => {
+            if (Array.isArray(a) && a.length >= 2) rxNtOwnComments.set(String(a[0]), String(a[1]));
+        });
+    }
 
     function rxNtOwnTime(value) {
         const t = Date.parse(value || '');
@@ -8669,16 +8681,76 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         return 'há ' + days + (days === 1 ? ' dia' : ' dias');
     }
 
+    function rxNtOwnLoad(uid) {
+        if (rxNtOwnLoadedFor === uid) return;
+        rxNtOwnLoadedFor = uid;
+        rxNtOwnRows.clear();
+        rxNtOwnCursor = null;
+        const saved = LS.json(RX_NT_OWN_STATE_PREFIX + uid);
+        const floor = Date.now() - RX_NT_MIRROR_DAYS * 86400000;
+        if (saved && Array.isArray(saved.r)) saved.r.forEach(a => {
+            if (!Array.isArray(a) || a.length < 6) return;
+            const row = { topic: String(a[0]), comment_id: Number(a[1]), user_id: Number(a[2]),
+                comment_owner_id: Number(a[3]) || null, emoji: String(a[4]), t: String(a[5] || '') };
+            if (Date.parse(row.t) >= floor) rxNtOwnRows.set([row.topic, row.comment_id, row.user_id].join(':'), row);
+        });
+        const cursorTime = saved && saved.c ? Date.parse(rxCursorTime(saved.c)) : NaN;
+        if (saved && saved.c && Number.isFinite(cursorTime) && cursorTime > floor) rxNtOwnCursor = saved.c;
+    }
+
+    function rxNtOwnSave(uid) {
+        const rows = [...rxNtOwnRows.values()].sort((a, b) => Date.parse(a.t) - Date.parse(b.t)).slice(-1500);
+        rxNtOwnRows.clear();
+        rows.forEach(r => rxNtOwnRows.set([r.topic, r.comment_id, r.user_id].join(':'), r));
+        LS.setJson(RX_NT_OWN_STATE_PREFIX + uid, {
+            c: rxNtOwnCursor,
+            r: rows.map(r => [r.topic, r.comment_id, r.user_id, r.comment_owner_id, r.emoji, r.t])
+        });
+    }
+
     function rxNtOwnContainer() {
-        const text = document.querySelector('[data-testid="notification-text"]');
-        if (!text) return null;
-        const link = text.closest('a[href*="post="]');
-        const item = link && link.closest('[data-testid^="notification-item-"]');
-        return item && item.parentElement ? { item, host: item.parentElement } : null;
+        const texts = [...document.querySelectorAll('[data-testid="notification-text"]')]
+            .filter(t => !t.closest('[data-ar-nt-own]'));
+        const candidates = texts.map(text => {
+            const link = text.closest('a[href*="post="]');
+            const item = link && link.closest('[data-testid^="notification-item-"]');
+            return item && item.parentElement ? { item, host: item.parentElement } : null;
+        }).filter(Boolean);
+        return candidates.find(x => x.item.querySelector('[style*="textclamp-lines"]')) || candidates[0] || null;
+    }
+
+    function rxNtOwnCommentText(row) {
+        const key = String(row.topic) + ':' + String(row.comment_id);
+        if (rxNtOwnComments.has(key)) return Promise.resolve(rxNtOwnComments.get(key));
+        if (rxNtOwnCommentPending.has(key)) return rxNtOwnCommentPending.get(key);
+        const pending = (async () => {
+            let value = 'Comentário indisponível';
+            try {
+                const m = String(row.topic).match(/^(-?\d+)_(\d+)$/);
+                if (!m) throw new Error('tópico inválido');
+                const result = await apiCall('board.getComments', {
+                    group_id: Number(m[1]), topic_id: Number(m[2]),
+                    start_comment_id: Number(row.comment_id), count: 100, sort: 'asc', preview_length: 0
+                });
+                const items = Array.isArray(result) ? result : (result && Array.isArray(result.items) ? result.items : []);
+                const comment = items.find(x => Number(x.comment_id != null ? x.comment_id : x.id) === Number(row.comment_id));
+                if (comment) value = String(comment.text || comment.message || '').trim() ||
+                    (comment.attachments && comment.attachments.length ? 'Comentário com anexo' : 'Comentário sem texto');
+            } catch (e) {
+                rxLog('Não foi possível carregar o comentário ' + row.comment_id + ':', e && e.message);
+            }
+            rxNtOwnComments.set(key, value);
+            if (rxNtOwnComments.size > 500) rxNtOwnComments.delete(rxNtOwnComments.keys().next().value);
+            LS.setJson(RX_NT_OWN_COMMENT_KEY, [...rxNtOwnComments].slice(-500));
+            return value;
+        })();
+        rxNtOwnCommentPending.set(key, pending);
+        pending.finally(() => rxNtOwnCommentPending.delete(key));
+        return pending;
     }
 
     function rxNtOwnRender(host, template, rows) {
-        const wanted = new Set();
+        const wanted = new Set(), previews = [];
         rows.forEach(r => {
             const uid = Number(r.user_id), cid = Number(r.comment_id), rid = String(r.emoji);
             const reaction = RX_BY_ID[rid];
@@ -8699,6 +8771,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 const menu = item.querySelector('[data-testid="notification-menu"]');
                 if (menu) menu.remove();
                 item.querySelectorAll('[data-ar-nt-hide], [data-ar-nt-list], .ar-nt-bd').forEach(n => n.remove());
+                item.querySelectorAll('[data-ar-nt-hide]').forEach(n => n.removeAttribute('data-ar-nt-hide'));
                 host.insertBefore(item, template);
             }
             const a = item.querySelector('a[data-testid="notification-avatar"]');
@@ -8711,7 +8784,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             const header = item.querySelector('[data-testid="notification-header"]');
             if (header) header.textContent = user.name;
             const time = item.querySelector('[data-testid="notification-time"]');
-            if (time) time.textContent = rxNtOwnTime(r.updated_at || r.t);
+            if (time) time.textContent = rxNtOwnTime(r.t);
             const body = item.querySelector('[data-testid="notification-text"]');
             if (body) {
                 body.removeAttribute('data-ar-nt-hide');
@@ -8724,41 +8797,90 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             }
             const commentLink = item.querySelector('a[data-ar-nt-own-link]');
             if (commentLink) commentLink.href = 'https://vk.ru/topic-' + r.topic + '?post=' + cid;
-            const content = item.querySelector('[data-testid="notification-text"]');
-            if (content) {
-                let p = content.nextElementSibling;
-                while (p) { const next = p.nextElementSibling; p.remove(); p = next; }
+
+            // Reutiliza a caixa nativa de prévia do comentário presente no item-modelo.
+            const preview = item.querySelector('[style*="textclamp-lines"]');
+            if (preview) {
+                const commentKey = String(r.topic) + ':' + String(cid);
+                preview.textContent = rxNtOwnComments.get(commentKey) || 'Carregando comentário…';
+                previews.push({ row: r, item, preview, commentKey });
+            }
+
+            // Mesmo selo circular usado nas notificações nativas alteradas pelo Salva VK.
+            const avatarHost = a && a.parentElement;
+            if (avatarHost) {
+                avatarHost.setAttribute('data-ar-nt-host', '1');
+                avatarHost.querySelectorAll(':scope > .ar-nt-bd').forEach(n => n.remove());
+                const badge = document.createElement('span');
+                badge.className = 'ar-nt-bd';
+                badge.setAttribute('data-sig', key + '-' + rid);
+                badge.appendChild(rxIcon(reaction, 18));
+                avatarHost.appendChild(badge);
             }
         });
+
         [...host.children].forEach(n => {
             const key = n.getAttribute && n.getAttribute('data-ar-nt-own');
             if (key && !wanted.has(key)) n.remove();
         });
+
+        // Busca textos sem bloquear a exibição dos avisos; no máximo quatro chamadas VK simultâneas.
+        let next = 0;
+        const workers = Array.from({ length: Math.min(4, previews.length) }, async () => {
+            while (next < previews.length) {
+                const p = previews[next++];
+                const value = await rxNtOwnCommentText(p.row);
+                if (p.item.isConnected && p.preview.isConnected && p.item.getAttribute('data-ar-nt-own') ===
+                    [p.row.topic, p.row.comment_id, p.row.user_id].join('-')) p.preview.textContent = value;
+            }
+        });
+        Promise.all(workers).catch(() => {});
     }
 
     async function rxNtOwnTick() {
         if (rxNtOwnBusy) return;
-        // A identidade também precisa ser confirmada na própria aba de notificações:
-        // rxPoll() só faz isso dentro de tópicos e, portanto, não roda nesta tela.
         if (meId == null || !meFresh) {
             await learnMeApi();
             if (meId == null || !meFresh) return;
         }
         const found = rxNtOwnContainer();
         if (!found) return;
-        if (Date.now() - rxNtOwnAt < 15000) return;
+        if (Date.now() - rxNtOwnAt < RX_NT_OWN_POLL_MS) return;
         rxNtOwnBusy = true;
         rxNtOwnAt = Date.now();
         try {
-            const since = new Date(Date.now() - RX_NT_MIRROR_DAYS * 86400000).toISOString();
-            const rows = await rxGet('&comment_owner_id=eq.' + encodeURIComponent(meId) +
-                '&emoji=in.(' + RX_NT_OWN_IDS.join(',') + ')&updated_at=gt.' + encodeURIComponent(since) +
-                '&order=updated_at.desc&limit=100');
-            const users = [...new Set(rows.map(r => Number(r.user_id)).filter(Number.isSafeInteger))];
+            rxNtOwnLoad(meId);
+            const floor = new Date(Date.now() - RX_NT_MIRROR_DAYS * 86400000).toISOString();
+            let cursor = rxNtOwnCursor;
+            let changed = false;
+            for (let page = 0; page < 6; page++) {
+                const cursorQuery = cursor
+                    ? '&after=' + encodeURIComponent(cursor)
+                    : '&updated_at=gt.' + encodeURIComponent(floor);
+                const rows = await rxGet('&comment_owner_id=eq.' + encodeURIComponent(meId) +
+                    cursorQuery + '&order=updated_at.asc&limit=1000');
+                if (!rows.length) {
+                    if (!cursor) cursor = JSON.stringify([new Date(Date.now() - 120000).toISOString(), '0_0', 1, 1]);
+                    break;
+                }
+                rows.forEach(r => {
+                    const key = [r.topic, r.comment_id, r.user_id].join(':');
+                    rxNtOwnRows.set(key, r);
+                });
+                cursor = rxCursorOf(rows[rows.length - 1]);
+                changed = true;
+                if (rows.length < 1000) break;
+            }
+            if (cursor && cursor !== rxNtOwnCursor) { rxNtOwnCursor = cursor; changed = true; }
+            if (changed) rxNtOwnSave(meId);
+
+            const displayRows = [...rxNtOwnRows.values()]
+                .filter(r => RX_BY_ID[String(r.emoji)] && RX_BY_ID[String(r.emoji)].noLike)
+                .sort((a, b) => Date.parse(b.t) - Date.parse(a.t)).slice(0, 100);
+            const users = [...new Set(displayRows.map(r => Number(r.user_id)).filter(Number.isSafeInteger))];
             await rxResolve(users, true);
-            // O item-modelo é um item nativo da lista; os itens próprios são inseridos como irmãos.
             const fresh = rxNtOwnContainer();
-            if (fresh) rxNtOwnRender(fresh.host, fresh.item, rows);
+            if (fresh) rxNtOwnRender(fresh.host, fresh.item, displayRows);
         } catch (e) {
             rxLog('Notificações negativas próprias: erro:', e && e.message);
         } finally {
