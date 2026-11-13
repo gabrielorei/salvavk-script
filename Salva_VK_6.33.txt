@@ -7329,6 +7329,16 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         return j.response;
     }
 
+    // DEBUG TEMPORÁRIO: resolve um screen_name usando somente a sessão desta aba.
+    // Não expõe nem grava o token; retorna apenas ID e nome público.
+    PW.__salvaVkTestResolveUser = async function (screenName) {
+        if (!base || !tokOf(base)) throw new Error('Esta aba ainda não capturou credenciais do VK. Abra/recarregue um tópico e tente novamente.');
+        const r = await apiCall('users.get', { user_ids: String(screenName || '').replace(/^@/, ''), fields: 'screen_name' });
+        const u = Array.isArray(r) ? r[0] : (r && Array.isArray(r.items) ? r.items[0] : null);
+        if (!u || !u.id) throw new Error('O VK não retornou um usuário para esse screen_name.');
+        return { id: Number(u.id), name: [u.first_name, u.last_name].filter(Boolean).join(' '), screen_name: u.screen_name || String(screenName) };
+    };
+
     // ---------- Quem é você ----------
     const ME_KEY = 'vk_ar_me_id';
     // Não reutiliza o ID salvo: o localStorage é compartilhado entre contas do VK no mesmo navegador.
