@@ -7574,11 +7574,20 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         return { lo: win ? win.lo : null, hi: win ? win.hi : null, fx };
     }
 
-    function rxFilter(w) {
-        const parts = [];
-        if (w.lo != null) parts.push('and(comment_id.gte.' + w.lo + ',comment_id.lte.' + w.hi + ')');
-        if (w.fx.length) parts.push('comment_id.in.(' + w.fx.join(',') + ')');
-        return 'or=(' + parts.join(',') + ')';
+    function rxFilters(w) {
+        const filters = [], range = w.lo != null
+            ? 'and(comment_id.gte.' + w.lo + ',comment_id.lte.' + w.hi + ')'
+            : null;
+        const chunks = [];
+        for (let i = 0; i < w.fx.length; i += 95) chunks.push(w.fx.slice(i, i + 95));
+        if (!chunks.length) chunks.push([]);
+        chunks.forEach(ids => {
+            const parts = [];
+            if (range) parts.push(range);
+            if (ids.length) parts.push('comment_id.in.(' + ids.join(',') + ')');
+            filters.push('or=(' + parts.join(',') + ')');
+        });
+        return filters;
     }
 
     // Monta os mapas a partir das linhas e devolve uma "impressão digital" (para saber se mudou algo desde a leitura anterior)
@@ -7633,25 +7642,33 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     // Leitura completa paginada; no delta usa cursor composto para não perder linhas com o mesmo timestamp.
     async function rxFetch(want, key, since) {
-        const common = '&' + rxFilter(want) + '&topic=eq.' + encodeURIComponent(key);
-        const out = [];
-        if (since == null) {
-            let offset = 0;
-            for (let page = 0; page < 100; page++) {
-                const rows = await rxGet('&limit=1000&offset=' + offset + '&order=comment_id.asc' + common + '&emoji=neq.0');
-                out.push(...rows);
-                if (rows.length < 1000) break;
-                offset += rows.length;
-            }
-        } else {
-            let cursor = since;
-            for (let page = 0; page < 100; page++) {
-                const tuple = rxCursorParts(cursor);
-                const after = tuple ? '&after=' + encodeURIComponent(cursor) : '&updated_at=gt.' + encodeURIComponent(cursor);
-                const rows = await rxGet('&limit=1000&order=updated_at.asc' + common + after);
-                out.push(...rows);
-                if (rows.length < 1000) break;
-                cursor = rxCursorOf(rows[rows.length - 1]);
+        const out = [], seen = new Set();
+        for (const filter of rxFilters(want)) {
+            const common = '&' + filter + '&topic=eq.' + encodeURIComponent(key);
+            if (since == null) {
+                let offset = 0;
+                for (let page = 0; page < 100; page++) {
+                    const rows = await rxGet('&limit=1000&offset=' + offset + '&order=comment_id.asc' + common + '&emoji=neq.0');
+                    rows.forEach(r => {
+                        const k = r.comment_id + ':' + r.user_id;
+                        if (!seen.has(k)) { seen.add(k); out.push(r); }
+                    });
+                    if (rows.length < 1000) break;
+                    offset += rows.length;
+                }
+            } else {
+                let cursor = since;
+                for (let page = 0; page < 100; page++) {
+                    const tuple = rxCursorParts(cursor);
+                    const after = tuple ? '&after=' + encodeURIComponent(cursor) : '&updated_at=gt.' + encodeURIComponent(cursor);
+                    const rows = await rxGet('&limit=1000&order=updated_at.asc' + common + after);
+                    rows.forEach(r => {
+                        const k = r.comment_id + ':' + r.user_id;
+                        if (!seen.has(k)) { seen.add(k); out.push(r); }
+                    });
+                    if (rows.length < 1000) break;
+                    cursor = rxCursorOf(rows[rows.length - 1]);
+                }
             }
         }
         return out;
@@ -8358,9 +8375,14 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     // Leitura completa de alguns comentários de um tópico, numa única consulta; grava no espelho (inclusive os sem reação)
     async function rxNtBatch(key, cids) {
         const rows = [];
-        for (let i = 0; i < cids.length; i += 100) {
-            const batch = cids.slice(i, i + 100);
-            rows.push(...await rxGet('&limit=1000&topic=eq.' + key + '&comment_id=in.(' + batch.join(',') + ')&emoji=neq.0'));
+        for (let i = 0; i < cids.length; i += 95) {
+            const batch = cids.slice(i, i + 95);
+            for (let offset = 0; ; offset += 1000) {
+                const page = await rxGet('&limit=1000&offset=' + offset + '&topic=eq.' + key + '&comment_id=in.(' + batch.join(',') + ')&emoji=neq.0');
+                rows.push(...page);
+                if (page.length < 1000) break;
+                if (offset >= 99000) throw new Error('Lote de reações excedeu 100.000 linhas');
+            }
         }
         const fresh = new Map();
         cids.forEach(c => fresh.set(c, new Map()));
