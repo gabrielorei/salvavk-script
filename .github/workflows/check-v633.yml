@@ -1,0 +1,21 @@
+name: Validate Salva VK 6.33
+on:
+  push:
+    branches:
+      - salvavk-v6.33-cloudflare-d1
+    paths:
+      - 'Salva_VK_6.33.txt'
+      - 'Salva_VK_API_6.33.js'
+      - '.github/workflows/check-v633.yml'
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check userscript syntax
+        run: node --check < Salva_VK_6.33.txt
+      - name: Check Worker syntax
+        run: node --check Salva_VK_API_6.33.js
