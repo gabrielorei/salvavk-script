@@ -8651,6 +8651,115 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     }
     try { new MutationObserver(rxNtSched).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
 
+    // ----- Notificações próprias para reações negativas -----
+    // O VK não cria notificações para estas reações. Criamos itens visuais na mesma lista,
+    // usando um item nativo como molde, sem chamar a API de curtidas.
+    const RX_NT_OWN_IDS = RX_LIST.filter(r => r.noLike).map(r => String(r.id));
+    const RX_NT_OWN_PREFIX = 'notification-item-salvavk-';
+    let rxNtOwnAt = 0, rxNtOwnBusy = false;
+
+    function rxNtOwnTime(value) {
+        const t = Date.parse(value || '');
+        if (!Number.isFinite(t)) return 'agora';
+        const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+        if (sec < 60) return 'agora';
+        if (sec < 3600) return 'há ' + Math.floor(sec / 60) + ' min';
+        if (sec < 86400) return 'há ' + Math.floor(sec / 3600) + ' h';
+        const days = Math.floor(sec / 86400);
+        return 'há ' + days + (days === 1 ? ' dia' : ' dias');
+    }
+
+    function rxNtOwnContainer() {
+        const text = document.querySelector('[data-testid="notification-text"]');
+        if (!text) return null;
+        const link = text.closest('a[href*="post="]');
+        const item = link && link.closest('[data-testid^="notification-item-"]');
+        return item && item.parentElement ? { item, host: item.parentElement } : null;
+    }
+
+    function rxNtOwnRender(host, template, rows) {
+        const wanted = new Set();
+        rows.forEach(r => {
+            const uid = Number(r.user_id), cid = Number(r.comment_id), rid = String(r.emoji);
+            const reaction = RX_BY_ID[rid];
+            if (!reaction || !reaction.noLike || !Number.isSafeInteger(uid) || !Number.isSafeInteger(cid)) return;
+            const key = [r.topic, cid, uid].join('-');
+            wanted.add(key);
+            const testid = RX_NT_OWN_PREFIX + key.replace(/[^a-zA-Z0-9_-]/g, '_');
+            let item = [...host.children].find(n => n.getAttribute && n.getAttribute('data-ar-nt-own') === key);
+            const user = rxUserOf(uid);
+            if (!item) {
+                item = template.cloneNode(true);
+                item.setAttribute('data-ar-nt-own', key);
+                item.setAttribute('data-testid', testid);
+                const oldLink = item.querySelector('a[href*="post="]');
+                if (!oldLink) return;
+                oldLink.href = 'https://vk.ru/topic-' + r.topic + '?post=' + cid;
+                oldLink.setAttribute('data-ar-nt-own-link', '1');
+                const menu = item.querySelector('[data-testid="notification-menu"]');
+                if (menu) menu.remove();
+                item.querySelectorAll('[data-ar-nt-hide], [data-ar-nt-list], .ar-nt-bd').forEach(n => n.remove());
+                host.insertBefore(item, template);
+            }
+            const a = item.querySelector('a[data-testid="notification-avatar"]');
+            const img = a && a.querySelector('img');
+            if (a) a.href = user.href;
+            if (img) {
+                img.alt = user.name;
+                if (user.photo) img.src = user.photo;
+            }
+            const header = item.querySelector('[data-testid="notification-header"]');
+            if (header) header.textContent = user.name;
+            const time = item.querySelector('[data-testid="notification-time"]');
+            if (time) time.textContent = rxNtOwnTime(r.updated_at || r.t);
+            const body = item.querySelector('[data-testid="notification-text"]');
+            if (body) {
+                body.removeAttribute('data-ar-nt-hide');
+                body.textContent = '';
+                body.appendChild(document.createTextNode('reagiu com '));
+                const icon = rxIcon(reaction, 18);
+                icon.style.cssText += ';display:inline-block;vertical-align:-4px';
+                body.appendChild(icon);
+                body.appendChild(document.createTextNode(' ao seu comentário'));
+            }
+            const commentLink = item.querySelector('a[data-ar-nt-own-link]');
+            if (commentLink) commentLink.href = 'https://vk.ru/topic-' + r.topic + '?post=' + cid;
+            const content = item.querySelector('[data-testid="notification-text"]');
+            if (content) {
+                let p = content.nextElementSibling;
+                while (p) { const next = p.nextElementSibling; p.remove(); p = next; }
+            }
+        });
+        [...host.children].forEach(n => {
+            const key = n.getAttribute && n.getAttribute('data-ar-nt-own');
+            if (key && !wanted.has(key)) n.remove();
+        });
+    }
+
+    async function rxNtOwnTick() {
+        if (rxNtOwnBusy || meId == null || !meFresh) return;
+        const found = rxNtOwnContainer();
+        if (!found) return;
+        if (Date.now() - rxNtOwnAt < 15000) return;
+        rxNtOwnBusy = true;
+        rxNtOwnAt = Date.now();
+        try {
+            const since = new Date(Date.now() - RX_NT_MIRROR_DAYS * 86400000).toISOString();
+            const rows = await rxGet('&comment_owner_id=eq.' + encodeURIComponent(meId) +
+                '&emoji=in.(' + RX_NT_OWN_IDS.join(',') + ')&updated_at=gt.' + encodeURIComponent(since) +
+                '&order=updated_at.desc&limit=100');
+            const users = [...new Set(rows.map(r => Number(r.user_id)).filter(Number.isSafeInteger))];
+            await rxResolve(users, true);
+            // O item-modelo é um item nativo da lista; os itens próprios são inseridos como irmãos.
+            const fresh = rxNtOwnContainer();
+            if (fresh) rxNtOwnRender(fresh.host, fresh.item, rows);
+        } catch (e) {
+            rxLog('Notificações negativas próprias: erro:', e && e.message);
+        } finally {
+            rxNtOwnBusy = false;
+        }
+    }
+
     // Descoberta: o que o espelho ainda não resolveu. Leitura em lote (uma consulta por tópico) e nomes dos usuários numa chamada só.
     async function rxNtListTick() {
         const need = new Map(), users = new Set();
@@ -8688,6 +8797,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         }));
         if (users.size) { try { await rxNtEnsureUsers([...users]); } catch (e) { rxLog('Notificação (janela): erro ao buscar nomes:', e && e.message); } }
         if (need.size || users.size) rxNtSched();
+        await rxNtOwnTick();
     }
 
     let rxNtBusy = false;
