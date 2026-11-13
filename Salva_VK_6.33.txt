@@ -8669,7 +8669,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     const RX_NT_OWN_PREFIX = 'notification-item-salvavk-';
     const RX_NT_OWN_PREPARE_MS = 10000; // prepara em segundo plano, sem depender da abertura da aba
     const RX_NT_OWN_COMMENT_KEY = 'vk_arx_nt_own_comments_v1';
-    let rxNtOwnAt = 0, rxNtOwnBusy = false, rxNtOwnRows = [];
+    let rxNtOwnAt = 0, rxNtOwnBusy = false, rxNtOwnRows = [], rxNtOwnRenderedAt = 0;
     const rxNtOwnComments = new Map();
     const rxNtOwnCommentPending = new Map();
     const rxNtOwnCommentRetry = new Map();
@@ -8691,6 +8691,8 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 const esc = { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true };
                 document.dispatchEvent(new KeyboardEvent('keydown', esc));
                 document.dispatchEvent(new KeyboardEvent('keyup', esc));
+                PW.dispatchEvent(new KeyboardEvent('keydown', esc));
+                PW.dispatchEvent(new KeyboardEvent('keyup', esc));
             } catch (err) {}
         }, 80);
     }, true);
@@ -8725,7 +8727,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         const pending = (async () => {
             let value = 'Comentário indisponível no momento', found = false;
             try {
-                const m = String(row.topic).match(/^(-?\\d+)_(\\d+)$/);
+                const m = String(row.topic).match(/^(-?\d+)_(\d+)$/);
                 if (!m) throw new Error('tópico inválido');
                 const result = await apiCall('board.getComments', {
                     group_id: Number(m[1]), topic_id: Number(m[2]),
@@ -8889,7 +8891,10 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
             // Se o VK acabou de montar a lista, injeta imediatamente o conteúdo já preparado.
             const fresh = rxNtOwnContainer();
-            if (fresh) rxNtOwnRender(fresh.host, fresh.item, rxNtOwnRows);
+            if (fresh && Date.now() - rxNtOwnRenderedAt >= 1200) {
+                rxNtOwnRender(fresh.host, fresh.item, rxNtOwnRows);
+                rxNtOwnRenderedAt = Date.now();
+            }
         } catch (e) {
             rxLog('Notificações negativas próprias: erro:', e && e.message);
         } finally {
