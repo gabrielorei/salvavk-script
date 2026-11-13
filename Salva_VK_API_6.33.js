@@ -25,7 +25,7 @@ function validId(value) {
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 function validCommentOwnerId(value) {
-  if (typeof value !== "number" && !(typeof value === "string" && /^-?[1-9]\\d*$/.test(value))) return null;
+  if (typeof value !== "number" && !(typeof value === "string" && /^-?[1-9]\d*$/.test(value))) return null;
   const n = Number(value);
   return Number.isSafeInteger(n) && n !== 0 ? n : null;
 }
