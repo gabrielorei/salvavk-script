@@ -8381,7 +8381,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 const page = await rxGet('&limit=1000&offset=' + offset + '&topic=eq.' + key + '&comment_id=in.(' + batch.join(',') + ')&emoji=neq.0');
                 rows.push(...page);
                 if (page.length < 1000) break;
-                if (offset >= 100000) throw new Error('Lote de reações excedeu 101.000 linhas');
+                if (offset >= 100000) throw new Error('Lote de reações atingiu o limite de 101.000 linhas');
             }
         }
         const fresh = new Map();
