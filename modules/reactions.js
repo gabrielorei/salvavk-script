@@ -1472,13 +1472,20 @@ SalvaVK.modules.register({
     const RX_NT_OWN_COMMENT_KEY = 'vk_arx_nt_own_comments_v1';
     let rxNtOwnAt = 0, rxNtOwnBusy = false, rxNtOwnRows = [], rxNtOwnRenderedAt = 0;
     const rxNtOwnComments = new Map();
+    const rxNtOwnMediaOnly = new Set();
     const rxNtOwnCommentPending = new Map();
     const rxNtOwnCommentRetry = new Map();
     {
         const saved = LS.json(RX_NT_OWN_COMMENT_KEY);
         if (Array.isArray(saved)) saved.forEach(a => {
             if (Array.isArray(a) && a.length >= 2 && String(a[1]) !== 'Comentário indisponível') {
-                rxNtOwnComments.set(String(a[0]), rxNtOwnFormatPreview(String(a[1])));
+                const key = String(a[0]);
+                const value = rxNtOwnFormatPreview(String(a[1]));
+                // Entradas antigas com o rótulo genérico serão atualizadas pela API.
+                if (value !== 'Comentário com anexo') {
+                    rxNtOwnComments.set(key, value);
+                    if (a[2] === true) rxNtOwnMediaOnly.add(key);
+                }
             }
         });
     }
@@ -1604,6 +1611,30 @@ SalvaVK.modules.register({
         return String(value || '').replace(/\[(?:id|club|public)\d+(?::[^\]]*)?\|([^\]]+)\]/gi, '$1');
     }
 
+    // Identifica os tipos de mídia retornados pelo board.getComments do VK.
+    function rxNtOwnAttachmentLabel(comment) {
+        const attachments = Array.isArray(comment && comment.attachments) ? comment.attachments : [];
+        const counts = { gif: 0, imagem: 0, vídeo: 0, sticker: 0 };
+        attachments.forEach(a => {
+            if (!a || typeof a !== 'object') return;
+            const type = String(a.type || '').toLowerCase();
+            const item = a[type] && typeof a[type] === 'object' ? a[type] : a;
+            const ext = String(item.ext || item.extension || '').toLowerCase();
+            const title = String(item.title || item.name || '').toLowerCase();
+            if (type === 'sticker' || item.sticker_id != null || item.sticker && typeof item.sticker === 'object') counts.sticker++;
+            else if (type === 'video') counts['vídeo']++;
+            else if (type === 'photo' || type === 'graffiti' || type === 'market_photo' || /\.(png|jpe?g|webp|bmp)$/i.test(title)) counts.imagem++;
+            else if ((type === 'doc' && (ext === 'gif' || /\.gif$/i.test(title))) || ext === 'gif' || /\.gif$/i.test(title)) counts.gif++;
+            else if (type === 'doc' && /\.(png|jpe?g|webp|bmp)$/i.test(ext)) counts.imagem++;
+        });
+        const parts = [];
+        if (counts.gif) parts.push(counts.gif === 1 ? 'GIF' : counts.gif + ' GIFs');
+        if (counts.imagem) parts.push(counts.imagem === 1 ? 'imagem' : counts.imagem + ' imagens');
+        if (counts['vídeo']) parts.push(counts['vídeo'] === 1 ? 'vídeo' : counts['vídeo'] + ' vídeos');
+        if (counts.sticker) parts.push(counts.sticker === 1 ? 'sticker' : counts.sticker + ' stickers');
+        return parts.length ? 'Comentário com ' + parts.join(', ') : 'Comentário sem texto';
+    }
+
     function rxNtOwnCommentText(row) {
         const key = String(row.topic) + ':' + String(row.comment_id);
         if (rxNtOwnComments.has(key)) return Promise.resolve(rxNtOwnFormatPreview(rxNtOwnComments.get(key)));
@@ -1616,8 +1647,14 @@ SalvaVK.modules.register({
                     rxNtOwnFetchComment(row.topic, row.comment_id),
                     new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('tempo esgotado ao buscar comentário')), 15000); })
                 ]);
-                value = rxNtOwnFormatPreview(String(comment.text || comment.message || '').trim()) ||
-                    (comment.attachments && comment.attachments.length ? 'Comentário com anexo' : 'Comentário sem texto');
+                const commentText = rxNtOwnFormatPreview(String(comment.text || comment.message || '').trim());
+                if (commentText) {
+                    value = commentText;
+                    rxNtOwnMediaOnly.delete(key);
+                } else {
+                    value = rxNtOwnAttachmentLabel(comment);
+                    rxNtOwnMediaOnly.add(key);
+                }
                 found = true;
             } catch (e) {
                 rxLog('Não foi possível carregar o comentário ' + row.comment_id + ':', e && e.message);
@@ -1627,8 +1664,12 @@ SalvaVK.modules.register({
             if (found) {
                 rxNtOwnComments.set(key, value);
                 rxNtOwnCommentRetry.delete(key);
-                if (rxNtOwnComments.size > 500) rxNtOwnComments.delete(rxNtOwnComments.keys().next().value);
-                LS.setJson(RX_NT_OWN_COMMENT_KEY, [...rxNtOwnComments].slice(-500));
+                if (rxNtOwnComments.size > 500) {
+                    const oldest = rxNtOwnComments.keys().next().value;
+                    rxNtOwnComments.delete(oldest);
+                    rxNtOwnMediaOnly.delete(oldest);
+                }
+                LS.setJson(RX_NT_OWN_COMMENT_KEY, [...rxNtOwnComments].map(([k, v]) => [k, v, rxNtOwnMediaOnly.has(k)]).slice(-500));
             } else {
                 // Falhas e resultados vazios são temporários: não gravar no cache definitivo.
                 rxNtOwnCommentRetry.set(key, Date.now() + 60000);
@@ -1801,9 +1842,13 @@ SalvaVK.modules.register({
             if (preview) {
                 const commentKey = String(group.topic) + ':' + String(group.comment_id);
                 preview.textContent = rxNtOwnFormatPreview(rxNtOwnComments.get(commentKey) || 'Carregando comentário…');
-                // Usa a mesma cor do texto da reação, respeitando o tema atual do VK.
-                const reactionText = item.querySelector('[data-testid="notification-text"]');
-                if (reactionText) preview.style.color = getComputedStyle(reactionText).color;
+                // Comentários apenas com mídia ficam na cor secundária; texto escrito acompanha a reação.
+                if (rxNtOwnMediaOnly.has(commentKey)) {
+                    preview.style.color = 'var(--vkui--color_text_secondary, rgb(129, 140, 153))';
+                } else {
+                    const reactionText = item.querySelector('[data-testid="notification-text"]');
+                    if (reactionText) preview.style.color = getComputedStyle(reactionText).color;
+                }
                 previews.push({ row: group.rows[0], item, preview, commentKey });
             }
 
