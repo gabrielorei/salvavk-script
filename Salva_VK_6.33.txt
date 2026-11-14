@@ -9427,6 +9427,99 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     if (!PW.SalvaVK) {
         try { Object.defineProperty(PW, 'SalvaVK', { value: SalvaVK, configurable: true }); } catch (e) { /* sandbox pode impedir a exposição */ }
     }
+
+    // Diagnóstico seguro da API (não expõe tokens nem credenciais).
+    // Console da página: await SalvaVKDiagnostics.run()
+    if (!PW.SalvaVKDiagnostics) {
+        const diagnostics = Object.freeze({
+            async run() {
+                const results = [];
+                const check = (name, fn) => {
+                    try {
+                        const detail = fn();
+                        results.push(Object.freeze({ test: name, ok: true, detail: detail == null ? null : String(detail) }));
+                    } catch (error) {
+                        results.push(Object.freeze({ test: name, ok: false, detail: String(error && error.message || error) }));
+                    }
+                };
+                const checkAsync = async (name, fn) => {
+                    try {
+                        const detail = await fn();
+                        results.push(Object.freeze({ test: name, ok: true, detail: detail == null ? null : String(detail) }));
+                    } catch (error) {
+                        results.push(Object.freeze({ test: name, ok: false, detail: String(error && error.message || error) }));
+                    }
+                };
+
+                check('API global disponível', () => {
+                    if (PW.SalvaVK !== SalvaVK) throw new Error('SalvaVK não está exposta na janela da página');
+                    return 'API v' + SalvaVK.core.apiVersion;
+                });
+                check('Informações de sessão sem credenciais', () => {
+                    const info = SalvaVK.vk.getSessionInfo();
+                    if (!info || typeof info.ready !== 'boolean') throw new Error('Formato de sessão inesperado');
+                    if (Object.keys(info).some(key => /token|credential|authorization|cookie/i.test(key))) throw new Error('Campo sensível encontrado');
+                    return 'ready=' + info.ready;
+                });
+                check('Helpers de interface', () => {
+                    const node = SalvaVK.ui.mk('', 'teste');
+                    const colors = SalvaVK.ui.themeColors();
+                    if (!(node instanceof HTMLElement) || node.textContent !== 'teste') throw new Error('mk() não retornou elemento esperado');
+                    if (!colors || typeof colors.bg !== 'string' || typeof colors.color !== 'string') throw new Error('themeColors() inválido');
+                    return 'mk e themeColors operacionais';
+                });
+                check('Rede bloqueia host não autorizado', () => {
+                    let rejected = false;
+                    try { SalvaVK.network.request({ url: 'https://example.invalid/test' }); }
+                    catch (error) { rejected = /não autorizado/i.test(String(error.message || error)); }
+                    if (!rejected) throw new Error('Host não autorizado não foi bloqueado imediatamente');
+                    return 'bloqueio local confirmado';
+                });
+
+                const storage = SalvaVK.storage.forModule('harness');
+                const storageKey = 'probe_' + Date.now().toString(36);
+                check('Storage namespaced', () => {
+                    storage.set(storageKey, 'ok');
+                    if (storage.get(storageKey) !== 'ok') throw new Error('Leitura diferente da gravação');
+                    storage.del(storageKey);
+                    if (storage.get(storageKey) != null) throw new Error('Chave não foi removida');
+                    return 'gravação, leitura e remoção confirmadas';
+                });
+
+                const moduleId = 'harness_' + Date.now().toString(36);
+                let starts = 0, stops = 0;
+                await checkAsync('Ciclo de vida e duplicidade de módulo', async () => {
+                    SalvaVK.modules.register({
+                        id: moduleId, version: 'test', apiVersion: 1,
+                        start(api) {
+                            if (api !== SalvaVK) throw new Error('API incorreta entregue ao módulo');
+                            starts++;
+                        },
+                        stop() { stops++; }
+                    });
+                    let duplicateBlocked = false;
+                    try {
+                        SalvaVK.modules.register({ id: moduleId, version: 'test', apiVersion: 1, start() {} });
+                    } catch (error) { duplicateBlocked = /já registrado/i.test(String(error.message || error)); }
+                    if (!duplicateBlocked) throw new Error('Registro duplicado foi aceito');
+                    await SalvaVK.modules.start(moduleId);
+                    if (SalvaVK.modules.status(moduleId).state !== 'ready' || starts !== 1) throw new Error('start() falhou');
+                    await SalvaVK.modules.stop(moduleId);
+                    if (SalvaVK.modules.status(moduleId).state !== 'stopped' || stops !== 1) throw new Error('stop() falhou');
+                    return 'registro, start, status, stop e duplicidade confirmados';
+                });
+
+                const passed = results.filter(item => item.ok).length;
+                return Object.freeze({
+                    apiVersion: SalvaVK.core.apiVersion,
+                    passed, failed: results.length - passed,
+                    results: Object.freeze(results)
+                });
+            }
+        });
+        try { Object.defineProperty(PW, 'SalvaVKDiagnostics', { value: diagnostics, configurable: true }); } catch (e) { /* sandbox pode impedir a exposição */ }
+    }
+
     // ===== FIM DA INTERFACE DE COMPATIBILIDADE =====
 
     loop();
