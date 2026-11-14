@@ -8373,8 +8373,10 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         rxNtMirrorAt = Date.now();
         try {
             const floor = Date.now() - RX_NT_MIRROR_DAYS * 86400000;
-            const savedTime = rxNtCursor ? Date.parse(rxCursorTime(rxNtCursor)) : NaN;
-            let since = rxNtCursor && Number.isFinite(savedTime) && savedTime > floor ? rxNtCursor : new Date(floor).toISOString();
+            // Só aceita o cursor composto atual. Cursors antigos (timestamp simples) forçam reconstrução integral.
+            const validCursor = rxCursorParts(rxNtCursor);
+            const savedTime = validCursor ? Date.parse(validCursor[0]) : NaN;
+            let since = validCursor && Number.isFinite(savedTime) && savedTime > floor ? rxNtCursor : new Date(floor).toISOString();
             const reset = since !== rxNtCursor;
             if (reset) rxNtMirror.clear(); // cursor ausente/antigo: reconstrói a janela de N dias
             let n = 0;
