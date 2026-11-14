@@ -36,7 +36,7 @@ html[data-ar-dark] .svka-box{--svka-bg:var(--vkui--color_background_modal,#23232
 .svka-sk{height:.45em;border-radius:.3em;background:var(--svka-sk)}
 .svka-bar{display:flex;align-items:center;gap:.25em;width:fit-content;margin:.7em 0 0 auto;padding:.15em .6em;border-radius:2em;font-size:.98em;line-height:1;background:var(--svka-bg);box-shadow:0 .15em .7em rgba(0,0,0,.12)}
 .svka-bar span{display:block;padding:.3em;border-radius:.6em}
-.svka-bar span.on{font-size:1.2em;background:color-mix(in srgb,var(--svka-fg) 5%,transparent)}
+.svka-bar span.on{font-size:1.2em;background:color-mix(in srgb,var(--svka-fg) 9%,transparent)}
 .svka-fill{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;padding:.3em 0;opacity:.10;filter:grayscale(.5);pointer-events:none;user-select:none;-webkit-mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent)}
 .svka-fill>div{display:flex;line-height:1}
 .svka-fill>.a{padding:0 12.5%}
@@ -46,7 +46,7 @@ html[data-ar-dark] .svka-box{--svka-bg:var(--vkui--color_background_modal,#23232
 .svka-foot{display:flex;justify-content:flex-end;margin-top:.5em;color:var(--svka-ac)}
 .svka-foot .svka-ic{width:1.3em;height:1.3em}
 .svka-foot .svka-ic svg{width:1.1em;height:1.1em}
-.svka-foot .svka-ic path{fill:color-mix(in srgb,var(--svka-ac) 30%,transparent)}
+.svka-foot .svka-ic path{fill:color-mix(in srgb,var(--svka-ac) 5%,transparent)}
 .svka-hint{display:flex;align-items:center;gap:.65em;font-size:.76em;line-height:1.4;color:var(--svka-fg2)}
 .svka-hint strong{color:var(--svka-fg)}
 .svka-hint .svka-ic{color:var(--svka-ac)}
