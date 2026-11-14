@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salva VK
 // @namespace    local.vk.autorefresh
-// @version      6.33
+// @version      6.31
 // @description  Salva VK: atualização de comentários, mídia, destaque e reações personalizadas
 // @match        https://vk.ru/*
 // @match        https://*.vk.ru/*
@@ -1034,7 +1034,7 @@
     }
 
     // ---------- Aviso de versão nova ----------
-    const SCRIPT_VERSION = '6.33';   // mantenha igual ao @version do cabeçalho
+    const SCRIPT_VERSION = '6.31';   // mantenha igual ao @version do cabeçalho
     const META_URL = 'https://update.greasyfork.org/scripts/600713/Salva%20VK.meta.js';
     const INSTALL_URL = 'https://update.greasyfork.org/scripts/600713/Salva%20VK.user.js';
     let newVersion = null;
