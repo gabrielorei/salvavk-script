@@ -22,7 +22,7 @@ SalvaVK.modules.register({
             title: 'Curtidas personalizadas',
             intro: 'Agora você pode **reagir aos comentários** com diferentes emojis, além da curtida habitual do VK.',
             preview: {
-                reactions: ['❤️', '🔥', '😂', '👏'],
+                reactions: ['❤️', '🔥', '😂'],
                 active: 1, // reação destacada na prévia (0 = primeira)
                 ambient: ['❤️', '🔥', '😂', '👏', '😲', '😈', '🙄', '🤡', '😭', '🤬']
             },
