@@ -1233,24 +1233,19 @@ SalvaVK.modules.register({
     function rxNtAppendPhrase(target, reaction, many) {
         const id = Number(reaction && reaction.id);
         const emoji = rxNtReactionEmoji(reaction);
-        const addStrong = value => {
-            const node = document.createElement('strong');
-            node.textContent = value;
-            target.appendChild(node);
-        };
         const addText = value => target.appendChild(document.createTextNode(value));
 
         if (id === 3 || id === 26 || id === 22) {
             addText(many ? 'estão ' : 'está ');
-            addStrong(id === 3 ? 'morrendo de rir' : id === 26 ? 'batendo palmas' : 'revirando os olhos');
+            addText(id === 3 ? 'morrendo de rir' : id === 26 ? 'batendo palmas' : 'revirando os olhos');
             addText((emoji ? ' ' + emoji : '') + ' com seu comentário');
         } else if (id === 17) {
             addText(many ? 'te acharam um ' : 'te achou um ');
-            addStrong('palhaço');
+            addText('palhaço');
             addText((emoji ? ' ' + emoji : '') + ' com seu comentário');
         } else {
             addText(many ? 'reagiram com ' : 'reagiu com ');
-            addStrong(rxNtReactionPhrase(reaction, many));
+            addText(rxNtReactionPhrase(reaction, many));
             addText(' ao seu comentário');
         }
     }
@@ -1264,18 +1259,12 @@ SalvaVK.modules.register({
             const id = Number(reaction.id);
             const emoji = rxNtReactionEmoji(reaction);
             if (id === 3 || id === 26 || id === 22) {
-                const strong = document.createElement('strong');
-                strong.textContent = id === 3 ? 'morrendo de rir' : id === 26 ? 'batendo palmas' : 'revirando os olhos';
-                out.push(T(many ? ' estão ' : ' está '), strong, T((emoji ? ' ' + emoji : '') + ' com seu comentário '));
+                out.push(T(many ? ' estão ' : ' está '), T(id === 3 ? 'morrendo de rir' : id === 26 ? 'batendo palmas' : 'revirando os olhos'), T((emoji ? ' ' + emoji : '') + ' com seu comentário '));
             } else if (id === 17) {
-                const strong = document.createElement('strong');
-                strong.textContent = 'palhaço';
-                out.push(T(many ? ' te acharam um ' : ' te achou um '), strong, T((emoji ? ' ' + emoji : '') + ' com seu comentário '));
+                out.push(T(many ? ' te acharam um ' : ' te achou um '), T('palhaço'), T((emoji ? ' ' + emoji : '') + ' com seu comentário '));
             } else {
                 const phrase = rxNtReactionPhrase(reaction, many);
-                const strong = document.createElement('strong');
-                strong.textContent = phrase;
-                out.push(T(' ' + (many ? RX_NT.verbMany : RX_NT.verbOne) + ' com '), strong, T(' ao seu comentário '));
+                out.push(T(' ' + (many ? RX_NT.verbMany : RX_NT.verbOne) + ' com '), T(phrase), T(' ao seu comentário '));
             }
             return out;
         }
