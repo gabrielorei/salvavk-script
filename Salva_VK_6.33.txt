@@ -4540,6 +4540,26 @@
         }
     }
 
+    // Confirma imediatamente o vencedor recuperado do cache, sem esperar a varredura completa do tópico.
+    async function topConfirmCachedBest(id, myKey) {
+        try {
+            const authors = {};
+            const confirmed = await topFetchById(id, authors);
+            if (topState.key !== myKey || !topState.best || String(topState.best.id) !== String(id)) return;
+            if (!confirmed) {
+                log('Post em destaque: não consegui confirmar pelo cache o comentário', id);
+                return;
+            }
+            topState.best = confirmed;
+            Object.assign(topState.authors, authors);
+            saveTopCache(myKey);
+            renderTopLiked();
+            log('Post em destaque: dados do comentário', id, 'confirmados na abertura do tópico');
+        } catch (e) {
+            if (topState.key === myKey) log('Post em destaque: falha ao confirmar o cache do comentário', id, '-', e && e.message);
+        }
+    }
+
     // Parte rápida (sem rede): troca de tópico, carrega o cache e mantém o cartão no lugar. Roda a cada mudança da página.
     function topLikedSync() {
         if (!TOP_LIKED_POST) return;
@@ -4552,6 +4572,7 @@
             const c = loadTopCache(key);
             if (c && c.mark && topState.markId && String(c.mark.id) === topState.markId) Object.assign(topState, { mark: c.mark, markAuthors: c.authors || {} });
             if (c) Object.assign(topState, { best: c.best || null, pin: c.v === 3 ? (c.pin || null) : null, authorId: c.authorId || null, authors: c.authors || {}, limited: !!c.limited, total: c.total || 0, last: c.at || 0, final: true });
+            if (c && c.best && c.best.id != null) topConfirmCachedBest(c.best.id, key);
         }
         renderTopLiked();   // o VK pode redesenhar a lista a qualquer momento
     }
