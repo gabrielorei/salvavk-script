@@ -8724,7 +8724,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             const header = item.querySelector('[data-testid="notification-header"]')?.textContent || '';
             const preview = item.querySelector('[style*="textclamp-lines"]');
             if (!avatar || avatarImages.length !== 1 || extraAvatars || /\bmais\s+\d+/i.test(header) || !preview) return null;
-            return { item, host: item.parentElement };
+            const host = item.closest('[data-testid="notifications-list-viewed"]');
+            if (!host) return null;
+            return { item, host };
         }).filter(Boolean);
         return candidates[0] || null;
     }
@@ -8830,7 +8832,8 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             const key = [r.topic, cid, uid].join('-');
             wanted.add(key);
             const testid = RX_NT_OWN_PREFIX + key.replace(/[^a-zA-Z0-9_-]/g, '_');
-            let item = [...host.children].find(n => n.getAttribute && n.getAttribute('data-ar-nt-own') === key);
+            let item = [...host.querySelectorAll('[data-ar-nt-own]')]
+                .find(n => n.getAttribute('data-ar-nt-own') === key);
             const user = rxUserOf(uid);
             if (!item) {
                 item = template.cloneNode(true);
@@ -8844,7 +8847,16 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 if (menu) menu.remove();
                 item.querySelectorAll('[data-ar-nt-list], .ar-nt-bd').forEach(n => n.remove());
                 item.querySelectorAll('[data-ar-nt-hide]').forEach(n => n.removeAttribute('data-ar-nt-hide'));
-                host.insertBefore(item, template);
+
+                // Cada aviso próprio ocupa um grupo irmão dos grupos nativos do VK.
+                const group = document.createElement('div');
+                group.setAttribute('data-ar-nt-own-group', key);
+                group.appendChild(item);
+                let templateGroup = template;
+                while (templateGroup.parentElement && templateGroup.parentElement !== host) {
+                    templateGroup = templateGroup.parentElement;
+                }
+                host.insertBefore(group, templateGroup);
             }
             const a = item.querySelector('a[data-testid="notification-avatar"]');
             const img = a && a.querySelector('img');
@@ -8892,9 +8904,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             }
         });
 
-        [...host.children].forEach(n => {
-            const key = n.getAttribute && n.getAttribute('data-ar-nt-own');
-            if (key && !wanted.has(key)) n.remove();
+        [...host.querySelectorAll('[data-ar-nt-own-group]')].forEach(group => {
+            const key = group.getAttribute('data-ar-nt-own-group');
+            if (!wanted.has(key)) group.remove();
         });
 
         // Intercala avisos próprios e nativos pela data, em vez de forçar
@@ -8903,8 +8915,10 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             [r.topic, r.comment_id, r.user_id].join('-'),
             Date.parse(r.t || '')
         ]));
-        const notificationItems = [...host.children].filter(n =>
-            n.matches && n.matches('[data-testid^="notification-item-"]'));
+        // Ordena os grupos diretos do VK; nunca retira notificações de dentro
+        // dos agrupamentos nativos. Um grupo nativo recebe a data do item mais recente.
+        const notificationGroups = [...host.children].filter(group =>
+            group.querySelector && group.querySelector('[data-testid^="notification-item-"]'));
         const timestampOf = item => {
             const ownKey = item.getAttribute('data-ar-nt-own');
             if (ownKey && ownTimes.has(ownKey)) return ownTimes.get(ownKey);
@@ -8933,19 +8947,23 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             const factor = factors[unit];
             return factor ? now - amount * factor : NaN;
         };
-        const orderedItems = notificationItems
-            .map((item, index) => ({ item, index, time: timestampOf(item) }))
+        const orderedGroups = notificationGroups
+            .map((group, index) => {
+                const times = [...group.querySelectorAll('[data-testid^="notification-item-"]')]
+                    .map(timestampOf).filter(Number.isFinite);
+                return { group, index, time: times.length ? Math.max(...times) : NaN };
+            })
             .sort((a, b) => {
                 const av = Number.isFinite(a.time), bv = Number.isFinite(b.time);
                 if (av && bv) return (b.time - a.time) || (a.index - b.index);
                 if (av !== bv) return av ? -1 : 1;
                 return a.index - b.index;
             });
-        if (orderedItems.length > 1) {
+        if (orderedGroups.length > 1) {
             const marker = document.createComment('salvavk-notification-order');
-            host.insertBefore(marker, notificationItems[0]);
+            host.insertBefore(marker, orderedGroups[0].group);
             const fragment = document.createDocumentFragment();
-            orderedItems.forEach(entry => fragment.appendChild(entry.item));
+            orderedGroups.forEach(entry => fragment.appendChild(entry.group));
             host.insertBefore(fragment, marker);
             marker.remove();
         }
