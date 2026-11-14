@@ -1208,18 +1208,55 @@ SalvaVK.modules.register({
     //  - todos reagiram e com a mesma: "reagiu com [ícone] ao seu comentário"
     //  - todos reagiram, reações diferentes: "reagiram ao seu comentário [ícones]"
     //  - só alguns reagiram: mantém o texto original e acrescenta os ícones
+    function rxNtReactionPhrase(r, many) {
+        const id = Number(r && r.id);
+        const emoji = r && r.fb ? ' ' + r.fb : '';
+        if (id === 22) return (many ? 'reviraram os olhos' : 'revirou os olhos') + emoji;
+        if (id === 17) return (many ? 'te acharam' : 'te achou') + ' um palhaço' + emoji;
+        const labels = {
+            2: 'foguinho', 3: 'morrendo de rir', 26: 'palmas',
+            19: 'surpresa', 39: 'diabinho', 7: 'tristeza', 31: 'raiva'
+        };
+        return labels[id] || (r && r.name ? r.name.toLocaleLowerCase('pt-BR') : 'reação') + emoji;
+    }
+
+    function rxNtAppendPhrase(target, reaction, many) {
+        const id = Number(reaction && reaction.id);
+        const phrase = rxNtReactionPhrase(reaction, many);
+        const strong = document.createElement('strong');
+        strong.textContent = phrase;
+        if (id === 22) {
+            target.appendChild(strong);
+            target.appendChild(document.createTextNode(' com seu comentário'));
+        } else if (id === 17) {
+            target.appendChild(strong);
+            target.appendChild(document.createTextNode(' com seu comentário'));
+        } else {
+            target.appendChild(document.createTextNode(many ? 'reagiram com ' : 'reagiu com '));
+            target.appendChild(strong);
+            target.appendChild(document.createTextNode(' ao seu comentário'));
+        }
+    }
+
     function rxNtNodes(rs, orig, size) {
         const got = rs.filter(Boolean), uniq = [...new Set(got)], sz = size || 16;
         const T = s => document.createTextNode(s);
-        const ic = r => { const im = rxIcon(r, sz); im.style.display = 'inline-block'; im.style.verticalAlign = (sz > 16 ? '-4px' : '-3px'); return im; };
-        const verb = rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne;
-        const out = [];
         if (got.length === rs.length && uniq.length === 1) {
-            out.push(T(' ' + verb + ' ' + RX_NT.with + ' '), ic(uniq[0]), T(' ' + RX_NT.tail + ' '));
-        } else {
-            out.push(T(got.length === rs.length ? ' ' + verb + ' ' + RX_NT.tail + ' ' : (orig || '') + ' '));
-            uniq.forEach(r => { out.push(ic(r)); out.push(T(' ')); });
+            const out = [], many = rs.length > 1;
+            const phrase = rxNtReactionPhrase(uniq[0], many);
+            const strong = document.createElement('strong');
+            strong.textContent = phrase;
+            const id = Number(uniq[0].id);
+            if (id === 22 || id === 17) {
+                out.push(T(' '), strong, T(' com seu comentário '));
+            } else {
+                out.push(T(' ' + (many ? RX_NT.verbMany : RX_NT.verbOne) + ' com '), strong, T(' ao seu comentário '));
+            }
+            return out;
         }
+        const ic = r => { const im = rxIcon(r, sz); im.style.display = 'inline-block'; im.style.verticalAlign = (sz > 16 ? '-4px' : '-3px'); return im; };
+        const out = [T(got.length === rs.length ? ' ' + (rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne) + ' ' + RX_NT.tail + ' ' : (orig || '') + ' ')];
+        uniq.forEach(r => { out.push(ic(r)); out.push(T(' ')); });
         return out;
     }
 
@@ -1736,11 +1773,7 @@ SalvaVK.modules.register({
             if (body) {
                 body.removeAttribute('data-ar-nt-hide');
                 body.textContent = '';
-                body.appendChild(document.createTextNode(names.length > 1 ? 'reagiram com ' : 'reagiu com '));
-                const icon = rxIcon(group.reaction, 18);
-                icon.style.cssText += ';display:inline-block;vertical-align:-4px';
-                body.appendChild(icon);
-                body.appendChild(document.createTextNode(' ao seu comentário'));
+                rxNtAppendPhrase(body, group.reaction, names.length > 1);
             }
 
             const commentLink = item.querySelector('a[data-ar-nt-own-link]');
