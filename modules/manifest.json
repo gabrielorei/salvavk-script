@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "apiVersion": 1,
-  "release": "6.33-modularizacao-dev15",
+  "release": "6.31-modularizacao-dev15",
   "modules": [
     {
       "id": "reactions",
