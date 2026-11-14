@@ -1482,7 +1482,7 @@ SalvaVK.modules.register({
                 const key = String(a[0]);
                 const value = rxNtOwnFormatPreview(String(a[1]));
                 // Entradas antigas com o rótulo genérico serão atualizadas pela API.
-                if (value !== 'Comentário com anexo') {
+                if (value !== 'Comentário com anexo' && value !== 'Comentário sem texto') {
                     rxNtOwnComments.set(key, value);
                     if (a[2] === true) rxNtOwnMediaOnly.add(key);
                 }
