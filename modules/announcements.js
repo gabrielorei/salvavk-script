@@ -1,5 +1,9 @@
 // Salva VK — sistema independente de avisos
 // O texto e o identificador de cada aviso ficam em modules/announcements_content.js.
+let announcementTimer = null;
+let announcementWrap = null;
+let announcementKeyHandler = null;
+
 SalvaVK.modules.register({
     id: 'announcements',
     version: '1.0.0',
@@ -10,8 +14,6 @@ SalvaVK.modules.register({
         const TOPIC_RE = new RegExp(api.ui.selectors.topic);
         const LIST_SELECTOR = '[data-testid="board-comments-list"]';
         const STYLE_ID = 'vk-ar-announcements-css';
-        let timer = null;
-        let openWrap = null;
         let done = false;
 
         const css = `
@@ -50,10 +52,11 @@ html[data-ar-dark] .ari-ok{color:#111}.ari-ok:hover{filter:brightness(1.1)}.ari-
             return el;
         }
         function close() {
-            if (!openWrap) return;
-            document.removeEventListener('keydown', onKey, true);
-            openWrap.remove();
-            openWrap = null;
+            if (!announcementWrap) return;
+            if (announcementKeyHandler) document.removeEventListener('keydown', announcementKeyHandler, true);
+            announcementWrap.remove();
+            announcementWrap = null;
+            announcementKeyHandler = null;
         }
         let okButton = null;
         function onKey(e) {
@@ -103,13 +106,14 @@ html[data-ar-dark] .ari-ok{color:#111}.ari-ok:hover{filter:brightness(1.1)}.ari-
             box.append(art, body);
             wrap.appendChild(box);
             wrap.addEventListener('mousedown', e => { if (e.target === wrap) close(); });
-            openWrap = wrap;
-            document.addEventListener('keydown', onKey, true);
+            announcementWrap = wrap;
+            announcementKeyHandler = onKey;
+            document.addEventListener('keydown', announcementKeyHandler, true);
             (document.body || document.documentElement).appendChild(wrap);
             try { okButton.focus({ preventScroll: true }); } catch (e) {}
         }
         function tick() {
-            if (done || openWrap || !document.body || !TOPIC_RE.test(location.pathname)) return;
+            if (done || announcementWrap || !document.body || !TOPIC_RE.test(location.pathname)) return;
             if (document.visibilityState !== 'visible' || !document.querySelector(LIST_SELECTOR)) return;
             const data = store.json('content', null);
             if (!data || !data.id) return;
@@ -118,12 +122,13 @@ html[data-ar-dark] .ari-ok{color:#111}.ari-ok:hover{filter:brightness(1.1)}.ari-
             store.set('seen_id', data.id);
             try { show(data); } catch (error) { console.error('[Salva VK · Avisos]', error); }
         }
-        timer = setInterval(() => { try { tick(); } catch (e) {} }, 1000);
+        announcementTimer = setInterval(() => { try { tick(); } catch (e) {} }, 1000);
     },
     stop() {
-        if (timer != null) clearInterval(timer);
-        timer = null;
-        if (openWrap) { openWrap.remove(); openWrap = null; }
-        document.removeEventListener('keydown', onKey, true);
+        if (announcementTimer != null) clearInterval(announcementTimer);
+        announcementTimer = null;
+        if (announcementWrap) { announcementWrap.remove(); announcementWrap = null; }
+        if (announcementKeyHandler) document.removeEventListener('keydown', announcementKeyHandler, true);
+        announcementKeyHandler = null;
     }
 });
