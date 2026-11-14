@@ -8824,117 +8824,166 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     }
 
     function rxNtOwnRender(host, template, rows) {
-        const wanted = new Set(), previews = [];
+        const grouped = new Map(), wanted = new Set(), previews = [];
         rows.forEach(r => {
             const uid = Number(r.user_id), cid = Number(r.comment_id), rid = String(r.emoji);
             const reaction = RX_BY_ID[rid];
             if (!reaction || !reaction.noLike || !Number.isSafeInteger(uid) || !Number.isSafeInteger(cid)) return;
-            const key = [r.topic, cid, uid].join('-');
+            const key = [r.topic, cid, rid].join('-');
+            let group = grouped.get(key);
+            if (!group) {
+                group = { key, topic: r.topic, comment_id: cid, emoji: rid, reaction, rows: [], time: 0 };
+                grouped.set(key, group);
+            }
+            group.rows.push(r);
+            const t = Date.parse(r.t || '');
+            if (Number.isFinite(t) && t > group.time) group.time = t;
+        });
+
+        grouped.forEach(group => {
+            const key = group.key;
             wanted.add(key);
             const testid = RX_NT_OWN_PREFIX + key.replace(/[^a-zA-Z0-9_-]/g, '_');
             let item = [...host.querySelectorAll('[data-ar-nt-own]')]
                 .find(n => n.getAttribute('data-ar-nt-own') === key);
-            const user = rxUserOf(uid);
             if (!item) {
                 item = template.cloneNode(true);
                 item.setAttribute('data-ar-nt-own', key);
                 item.setAttribute('data-testid', testid);
                 const oldLink = item.querySelector('a[href*="post="]');
                 if (!oldLink) return;
-                oldLink.href = 'https://vk.ru/topic-' + r.topic + '?post=' + cid;
+                oldLink.href = 'https://vk.ru/topic-' + group.topic + '?post=' + group.comment_id;
                 oldLink.setAttribute('data-ar-nt-own-link', '1');
                 const menu = item.querySelector('[data-testid="notification-menu"]');
                 if (menu) menu.remove();
                 item.querySelectorAll('[data-ar-nt-list], .ar-nt-bd').forEach(n => n.remove());
                 item.querySelectorAll('[data-ar-nt-hide]').forEach(n => n.removeAttribute('data-ar-nt-hide'));
 
-                // Cada aviso próprio ocupa um grupo irmão dos grupos nativos do VK.
-                const group = document.createElement('div');
-                group.setAttribute('data-ar-nt-own-group', key);
-                group.appendChild(item);
+                // Um único aviso por comentário + emoji, em grupo irmão dos grupos nativos.
+                const wrapper = document.createElement('div');
+                wrapper.setAttribute('data-ar-nt-own-group', key);
+                wrapper.appendChild(item);
                 let templateGroup = template;
                 while (templateGroup.parentElement && templateGroup.parentElement !== host) {
                     templateGroup = templateGroup.parentElement;
                 }
-                host.insertBefore(group, templateGroup);
+                host.insertBefore(wrapper, templateGroup);
             }
-            const a = item.querySelector('a[data-testid="notification-avatar"]');
-            const img = a && a.querySelector('img');
-            if (a) a.href = user.href;
-            if (img) {
-                img.alt = user.name;
-                if (user.photo) img.src = user.photo;
-                else img.removeAttribute('src');
-            }
+
+            const actors = group.rows
+                .slice()
+                .sort((a, b) => Date.parse(b.t || 0) - Date.parse(a.t || 0))
+                .map(r => ({ row: r, user: rxUserOf(Number(r.user_id)) }));
+            const names = actors.map(a => a.user.name);
             const header = item.querySelector('[data-testid="notification-header"]');
-            if (header) header.textContent = user.name;
+            if (header) {
+                header.textContent = names.length <= 1 ? (names[0] || 'Usuário') :
+                    names.length === 2 ? names[0] + ' e ' + names[1] :
+                    names[0] + ', ' + names[1] + ' e mais ' + (names.length - 2);
+            }
+
             const time = item.querySelector('[data-testid="notification-time"]');
-            if (time) time.textContent = rxNtOwnTime(r.t);
+            if (time) time.textContent = rxNtOwnTime(group.rows.reduce((latest, r) =>
+                Date.parse(r.t || 0) > Date.parse(latest.t || 0) ? r : latest, group.rows[0]).t);
+
             const body = item.querySelector('[data-testid="notification-text"]');
             if (body) {
                 body.removeAttribute('data-ar-nt-hide');
                 body.textContent = '';
-                body.appendChild(document.createTextNode('reagiu com '));
-                const icon = rxIcon(reaction, 18);
+                body.appendChild(document.createTextNode(names.length > 1 ? 'reagiram com ' : 'reagiu com '));
+                const icon = rxIcon(group.reaction, 18);
                 icon.style.cssText += ';display:inline-block;vertical-align:-4px';
                 body.appendChild(icon);
                 body.appendChild(document.createTextNode(' ao seu comentário'));
             }
-            const commentLink = item.querySelector('a[data-ar-nt-own-link]');
-            if (commentLink) commentLink.href = 'https://vk.ru/topic-' + r.topic + '?post=' + cid;
 
-            // Reutiliza a caixa nativa de prévia do comentário presente no item-modelo.
+            const commentLink = item.querySelector('a[data-ar-nt-own-link]');
+            if (commentLink) commentLink.href = 'https://vk.ru/topic-' + group.topic + '?post=' + group.comment_id;
+
+            // Reutiliza a caixa nativa de prévia do comentário: uma busca por agrupamento.
             const preview = item.querySelector('[style*="textclamp-lines"]');
             if (preview) {
-                const commentKey = String(r.topic) + ':' + String(cid);
+                const commentKey = String(group.topic) + ':' + String(group.comment_id);
                 preview.textContent = rxNtOwnComments.get(commentKey) || 'Carregando comentário…';
-                previews.push({ row: r, item, preview, commentKey });
+                previews.push({ row: group.rows[0], item, preview, commentKey });
             }
 
-            // Mesmo selo circular usado nas notificações nativas alteradas pelo Salva VK.
-            const avatarHost = a && a.parentElement;
-            if (avatarHost) {
-                avatarHost.setAttribute('data-ar-nt-host', '1');
+            // Empilha até três avatares e mantém o selo circular do emoji no canto.
+            const avatar = item.querySelector('a[data-testid="notification-avatar"]');
+            const avatarHost = avatar && avatar.parentElement;
+            if (avatar && avatarHost && actors.length) {
+                const avatarTemplate = avatar.cloneNode(true);
+                avatarHost.querySelectorAll('a[data-testid="notification-avatar"], a[data-ar-nt-own-avatar]')
+                    .forEach(n => n.remove());
                 avatarHost.querySelectorAll(':scope > .ar-nt-bd').forEach(n => n.remove());
+                avatarHost.setAttribute('data-ar-nt-host', '1');
+                avatarHost.style.position = 'relative';
+                avatarHost.style.width = '48px';
+                avatarHost.style.height = '48px';
+                avatarHost.style.flex = '0 0 48px';
+
+                const shown = actors.slice(0, 3);
+                const positions = shown.length === 1
+                    ? [[0, 0, 48]]
+                    : shown.length === 2
+                        ? [[0, 0, 32], [16, 16, 32]]
+                        : [[0, 0, 28], [20, 0, 28], [10, 20, 28]];
+                shown.forEach((actor, index) => {
+                    const a = avatarTemplate.cloneNode(true);
+                    a.setAttribute('data-ar-nt-own-avatar', '1');
+                    a.setAttribute('data-testid', index === 0 ? 'notification-avatar' : 'notification-avatar-group');
+                    a.href = actor.user.href;
+                    const img = a.querySelector('img');
+                    if (img) {
+                        img.alt = actor.user.name;
+                        if (actor.user.photo) img.src = actor.user.photo;
+                        else img.removeAttribute('src');
+                    }
+                    const [left, top, size] = positions[index];
+                    a.style.position = 'absolute';
+                    a.style.left = left + 'px';
+                    a.style.top = top + 'px';
+                    a.style.width = size + 'px';
+                    a.style.height = size + 'px';
+                    a.style.zIndex = String(index + 1);
+                    a.style.borderRadius = '50%';
+                    a.style.overflow = 'hidden';
+                    a.style.boxSizing = 'border-box';
+                    a.style.border = '2px solid var(--vkui--color_background_content,#fff)';
+                    avatarHost.appendChild(a);
+                });
+
                 const badge = document.createElement('span');
                 badge.className = 'ar-nt-bd';
-                badge.setAttribute('data-sig', key + '-' + rid);
-                badge.appendChild(rxIcon(reaction, 18));
+                badge.setAttribute('data-sig', key + '-' + group.emoji);
+                badge.appendChild(rxIcon(group.reaction, 18));
                 avatarHost.appendChild(badge);
             }
         });
 
-        [...host.querySelectorAll('[data-ar-nt-own-group]')].forEach(group => {
-            const key = group.getAttribute('data-ar-nt-own-group');
-            if (!wanted.has(key)) group.remove();
+        // Remove grupos que deixaram de ter reação negativa válida.
+        [...host.querySelectorAll('[data-ar-nt-own-group]')].forEach(wrapper => {
+            const key = wrapper.getAttribute('data-ar-nt-own-group');
+            if (!wanted.has(key)) wrapper.remove();
         });
 
-        // Intercala avisos próprios e nativos pela data, em vez de forçar
-        // todas as reações negativas para o topo da lista.
-        const ownTimes = new Map(rows.map(r => [
-            [r.topic, r.comment_id, r.user_id].join('-'),
-            Date.parse(r.t || '')
-        ]));
-        // Ordena os grupos diretos do VK; nunca retira notificações de dentro
-        // dos agrupamentos nativos. Um grupo nativo recebe a data do item mais recente.
+        // Intercala avisos próprios e nativos pela data mais recente de cada agrupamento.
+        const ownTimes = new Map([...grouped.values()].map(group => [group.key, group.time]));
         const notificationGroups = [...host.children].filter(group =>
             group.querySelector && group.querySelector('[data-testid^="notification-item-"]'));
         const timestampOf = item => {
             const ownKey = item.getAttribute('data-ar-nt-own');
             if (ownKey && ownTimes.has(ownKey)) return ownTimes.get(ownKey);
 
-            // O VK não expõe datetime/title: o horário real está no texto relativo.
             const label = (item.querySelector('[data-testid="notification-time"]')?.textContent || '')
                 .trim().toLocaleLowerCase('pt-BR');
             const now = Date.now();
             if (!label) return NaN;
             if (/^(agora|agora mesmo|há poucos segundos|menos de um minuto)/.test(label)) return now;
             if (/\bontem\b/.test(label)) return now - 24 * 60 * 60 * 1000;
-
             const match = label.match(/(?:há\s*)?(\d+)\s*(s|seg(?:undo)?s?|min(?:uto)?s?|h|hora?s?|d|dia?s?|semana?s?|m[eê]s(?:es)?|ano?s?)(?:\s+atr[aá]s)?/i);
             if (!match) return NaN;
-            const amount = Number(match[1]);
-            const unit = match[2].toLowerCase();
+            const amount = Number(match[1]), unit = match[2].toLowerCase();
             const factors = {
                 s: 1000, seg: 1000, segundo: 1000, segundos: 1000,
                 min: 60000, minuto: 60000, minutos: 60000,
@@ -8944,14 +8993,13 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 mês: 2592000000, meses: 2592000000,
                 ano: 31536000000, anos: 31536000000
             };
-            const factor = factors[unit];
-            return factor ? now - amount * factor : NaN;
+            return factors[unit] ? now - amount * factors[unit] : NaN;
         };
         const orderedGroups = notificationGroups
-            .map((group, index) => {
-                const times = [...group.querySelectorAll('[data-testid^="notification-item-"]')]
+            .map((wrapper, index) => {
+                const times = [...wrapper.querySelectorAll('[data-testid^="notification-item-"]')]
                     .map(timestampOf).filter(Number.isFinite);
-                return { group, index, time: times.length ? Math.max(...times) : NaN };
+                return { wrapper, index, time: times.length ? Math.max(...times) : NaN };
             })
             .sort((a, b) => {
                 const av = Number.isFinite(a.time), bv = Number.isFinite(b.time);
@@ -8961,21 +9009,23 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             });
         if (orderedGroups.length > 1) {
             const marker = document.createComment('salvavk-notification-order');
-            host.insertBefore(marker, orderedGroups[0].group);
+            host.insertBefore(marker, orderedGroups[0].wrapper);
             const fragment = document.createDocumentFragment();
-            orderedGroups.forEach(entry => fragment.appendChild(entry.group));
+            orderedGroups.forEach(entry => fragment.appendChild(entry.wrapper));
             host.insertBefore(fragment, marker);
             marker.remove();
         }
 
-        // Busca textos sem bloquear a exibição dos avisos; no máximo quatro chamadas VK simultâneas.
+        // Busca uma única prévia por agrupamento; no máximo quatro chamadas VK simultâneas.
         let next = 0;
         const workers = Array.from({ length: Math.min(4, previews.length) }, async () => {
             while (next < previews.length) {
                 const p = previews[next++];
                 const value = await rxNtOwnCommentText(p.row);
-                if (p.item.isConnected && p.preview.isConnected && p.item.getAttribute('data-ar-nt-own') ===
-                    [p.row.topic, p.row.comment_id, p.row.user_id].join('-')) p.preview.textContent = value;
+                if (p.item.isConnected && p.preview.isConnected &&
+                    p.item.getAttribute('data-ar-nt-own') === [p.row.topic, p.row.comment_id, p.row.emoji].join('-')) {
+                    p.preview.textContent = value;
+                }
             }
         });
         Promise.all(workers).catch(() => {});
