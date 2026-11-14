@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "apiVersion": 1,
-  "release": "6.33-modularizacao-dev5",
+  "release": "6.33-modularizacao-dev6",
   "modules": [
     {
       "id": "reactions",
@@ -22,7 +22,7 @@
       "url": "https://salva-vk-api.salvavk.workers.dev/modules/games.js?ref=feature/modularizacao",
       "pages": [
         "topic",
-        "board"
+        "community"
       ]
     }
   ]
