@@ -6615,7 +6615,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             get accountId() { return meId || null; },
             get page() {
                 if (TOPIC_RE.test(location.pathname)) return 'topic';
-                if (/^\/board/i.test(location.pathname)) return 'board';
+                if (/^\/board/i.test(location.pathname)) return 'community';
                 if (/notification/i.test(location.pathname)) return 'notifications';
                 if (/club|public/i.test(location.pathname)) return 'community';
                 return 'other';
