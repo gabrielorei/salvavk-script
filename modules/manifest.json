@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "apiVersion": 1,
-  "release": "6.33-modularizacao-dev11",
+  "release": "6.33-modularizacao-dev12",
   "modules": [
     {
       "id": "reactions",
       "version": "1.0.0",
       "apiVersion": 1,
-      "sha256": "a66e7645bf31f33fe0f0a71e38da21de6bd6d36bba64133c526a7f1680fcbf35",
+      "sha256": "ac07ab9a9ee623530a543718a4a4f94699104fb5197a37faefebac6dde79aef3",
       "url": "https://salva-vk-api.salvavk.workers.dev/modules/reactions.js?ref=5c023545cc833a299541d07e75203626264624db",
       "pages": [
         "topic",
