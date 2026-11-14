@@ -6555,6 +6555,20 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             }
             return { savedAt: Date.now(), manifest, sources };
         }
+        // Caminho único de seleção: rede primeiro; em caso de falha, valida o último snapshot íntegro.
+        async function resolveSnapshot(download = downloadSnapshot) {
+            try {
+                return { snapshot: await download(), mode: 'network', error: null };
+            } catch (networkError) {
+                const cached = readCache();
+                if (!cached) throw networkError;
+                return {
+                    snapshot: await verifySnapshot(cached),
+                    mode: 'cache',
+                    error: String(networkError && networkError.message || networkError)
+                };
+            }
+        }
         async function executeSnapshot(snapshot) {
             const selected = snapshot.manifest.modules.filter(item => item.pages.includes(SalvaVK.core.page));
             const compiled = selected.map(item => {
@@ -6577,21 +6591,14 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             if (pending && !force) return pending;
             pending = (async () => {
                 state = 'loading'; lastError = null;
-                let snapshot = null, mode = 'network';
-                try {
-                    snapshot = await downloadSnapshot();
-                } catch (networkError) {
-                    const cached = readCache();
-                    if (!cached) throw networkError;
-                    snapshot = await verifySnapshot(cached);
-                    mode = 'cache';
-                    lastError = String(networkError && networkError.message || networkError);
-                }
+                const resolved = await resolveSnapshot();
+                const snapshot = resolved.snapshot, mode = resolved.mode;
                 const count = await executeSnapshot(snapshot);
                 if (mode === 'network') writeCache(snapshot);
                 loadedRelease = snapshot.manifest.release;
                 loadedCount = count;
                 sourceMode = mode;
+                lastError = resolved.error;
                 state = 'ready';
                 return Object.freeze({ state, release: loadedRelease, source: sourceMode, modules: count });
             })().catch(error => {
@@ -6601,9 +6608,29 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             }).finally(() => { pending = null; });
             return pending;
         }
+        async function diagnoseCacheFallback() {
+            // Simula somente a rejeição da etapa de rede; não altera o cache nem o estado global do loader.
+            const before = { state, release: loadedRelease, source: sourceMode, error: lastError };
+            const resolved = await resolveSnapshot(async () => {
+                throw new Error('Falha de rede simulada pelo diagnóstico');
+            });
+            if (resolved.mode !== 'cache') throw new Error('O diagnóstico não selecionou o cache');
+            const count = await executeSnapshot(resolved.snapshot);
+            const after = { state, release: loadedRelease, source: sourceMode, error: lastError };
+            return Object.freeze({
+                simulated: true,
+                state: 'ready',
+                release: resolved.snapshot.manifest.release,
+                source: resolved.mode,
+                modules: count,
+                cacheVerified: true,
+                loaderUnchanged: JSON.stringify(before) === JSON.stringify(after)
+            });
+        }
         return Object.freeze({
             start: () => start(false),
             refresh: () => start(true),
+            diagnoseCacheFallback,
             status: () => Object.freeze({ state, release: loadedRelease, source: sourceMode, error: lastError })
         });
     })();
