@@ -7,7 +7,7 @@
       "id": "reactions",
       "version": "1.0.0",
       "apiVersion": 1,
-      "sha256": "1f7f57abc3afcd07ccd928cbb3950115777c963118f568a95ac003ce8ef1df1d",
+      "sha256": "51e136f57f2cc12b3c5169a71355ccd2cafa4cf9505cdef9144617c155bb7b83",
       "url": "https://salva-vk-api.salvavk.workers.dev/modules/reactions.js?ref=c52cc002c395d5fb613c195114332dd04def48f4",
       "pages": [
         "topic",
