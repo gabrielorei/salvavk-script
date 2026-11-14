@@ -1425,7 +1425,7 @@ SalvaVK.modules.register({
         const saved = LS.json(RX_NT_OWN_COMMENT_KEY);
         if (Array.isArray(saved)) saved.forEach(a => {
             if (Array.isArray(a) && a.length >= 2 && String(a[1]) !== 'Comentário indisponível') {
-                rxNtOwnComments.set(String(a[0]), String(a[1]));
+                rxNtOwnComments.set(String(a[0]), rxNtOwnFormatPreview(String(a[1])));
             }
         });
     }
@@ -1553,7 +1553,7 @@ SalvaVK.modules.register({
 
     function rxNtOwnCommentText(row) {
         const key = String(row.topic) + ':' + String(row.comment_id);
-        if (rxNtOwnComments.has(key)) return Promise.resolve(rxNtOwnComments.get(key));
+        if (rxNtOwnComments.has(key)) return Promise.resolve(rxNtOwnFormatPreview(rxNtOwnComments.get(key)));
         if (rxNtOwnCommentPending.has(key)) return rxNtOwnCommentPending.get(key);
         if (Date.now() < (rxNtOwnCommentRetry.get(key) || 0)) return Promise.resolve('Comentário indisponível no momento');
         const pending = (async () => {
@@ -1750,7 +1750,7 @@ SalvaVK.modules.register({
             const preview = item.querySelector('[style*="textclamp-lines"]');
             if (preview) {
                 const commentKey = String(group.topic) + ':' + String(group.comment_id);
-                preview.textContent = rxNtOwnComments.get(commentKey) || 'Carregando comentário…';
+                preview.textContent = rxNtOwnFormatPreview(rxNtOwnComments.get(commentKey) || 'Carregando comentário…');
                 previews.push({ row: group.rows[0], item, preview, commentKey });
             }
 
