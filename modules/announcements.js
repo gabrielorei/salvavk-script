@@ -1,4 +1,5 @@
 // Salva VK — sistema independente de avisos
+// Renderização do aviso: conteúdo editável separadamente em announcements_content.js.
 // O texto e o identificador de cada aviso ficam em modules/announcements_content.js.
 let announcementTimer = null;
 let announcementWrap = null;
