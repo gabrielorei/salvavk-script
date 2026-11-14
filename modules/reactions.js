@@ -1546,6 +1546,11 @@ SalvaVK.modules.register({
         return exact;
     }
 
+    // Converte marcações de perfil do VK para o nome visível no tópico.
+    function rxNtOwnFormatPreview(value) {
+        return String(value || '').replace(/\[(?:id|club|public)\d+(?::[^\]]*)?\|([^\]]+)\]/gi, '$1');
+    }
+
     function rxNtOwnCommentText(row) {
         const key = String(row.topic) + ':' + String(row.comment_id);
         if (rxNtOwnComments.has(key)) return Promise.resolve(rxNtOwnComments.get(key));
@@ -1558,7 +1563,7 @@ SalvaVK.modules.register({
                     rxNtOwnFetchComment(row.topic, row.comment_id),
                     new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('tempo esgotado ao buscar comentário')), 15000); })
                 ]);
-                value = String(comment.text || comment.message || '').trim() ||
+                value = rxNtOwnFormatPreview(String(comment.text || comment.message || '').trim()) ||
                     (comment.attachments && comment.attachments.length ? 'Comentário com anexo' : 'Comentário sem texto');
                 found = true;
             } catch (e) {
