@@ -8877,8 +8877,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             const names = actors.map(a => a.user.name);
             const header = item.querySelector('[data-testid="notification-header"]');
             if (header) {
-                const latestFirstName = (names[0] || 'Usuário').trim().split(/\s+/)[0];
-                header.textContent = names.length <= 1 ? latestFirstName :
+                const latestName = (names[0] || 'Usuário').trim();
+                const latestFirstName = latestName.split(/\s+/)[0];
+                header.textContent = names.length <= 1 ? latestName :
                     latestFirstName + ' e mais ' + (names.length - 1);
             }
 
