@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Salva VKTesteChat
+// @name         Salva VKTesteChatDividir
 // @namespace    local.vk.autorefresh
 // @version      6.33
 // @description  Salva VK: atualização de comentários, mídia, destaque e reações personalizadas
@@ -9253,6 +9253,133 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         });
     };
 
+    // Carregador remoto: manifesto validado, módulos verificados por SHA-256 e cache da última versão íntegra.
+    const moduleLoader = (() => {
+        const MANIFEST_URL = 'https://raw.githubusercontent.com/gabrielorei/salvavk-script/feature/modularizacao/modules/manifest.json';
+        const CACHE_KEY = 'SalvaVK_ModuleSnapshot_v1';
+        const MAX_MANIFEST_BYTES = 128 * 1024, MAX_MODULE_BYTES = 1536 * 1024;
+        let state = 'idle', lastError = null, loadedRelease = null, pending = null, sourceMode = null;
+
+        function byteLength(value) { return new TextEncoder().encode(value).length; }
+        async function digest(value) {
+            if (!PW.crypto || !PW.crypto.subtle) throw new Error('Web Crypto indisponível; não é possível verificar SHA-256');
+            const bytes = await PW.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+            return [...new Uint8Array(bytes)].map(n => n.toString(16).padStart(2, '0')).join('');
+        }
+        function validateManifest(manifest) {
+            if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Manifesto inválido');
+            if (manifest.schemaVersion !== 1 || manifest.apiVersion !== SalvaVK.core.apiVersion) throw new Error('Versão do manifesto/API incompatível');
+            if (typeof manifest.release !== 'string' || !manifest.release || manifest.release.length > 80) throw new Error('Identificação de release inválida');
+            if (!Array.isArray(manifest.modules) || manifest.modules.length > 8) throw new Error('Lista de módulos inválida');
+            const ids = new Set();
+            for (const item of manifest.modules) {
+                if (!item || !/^[a-z][a-z0-9_-]{1,31}$/.test(String(item.id || ''))) throw new Error('ID de módulo inválido no manifesto');
+                if (ids.has(item.id)) throw new Error('Módulo duplicado no manifesto: ' + item.id);
+                ids.add(item.id);
+                if (item.apiVersion !== SalvaVK.core.apiVersion || typeof item.version !== 'string' || !item.version) throw new Error('Versão incompatível no módulo ' + item.id);
+                if (!/^[a-f0-9]{64}$/i.test(String(item.sha256 || ''))) throw new Error('SHA-256 inválido no módulo ' + item.id);
+                if (!Array.isArray(item.pages) || !item.pages.length || item.pages.some(p => !['topic', 'notifications', 'community', 'other'].includes(p))) throw new Error('Páginas inválidas no módulo ' + item.id);
+                const url = new URL(String(item.url || ''));
+                if (url.protocol !== 'https:' || url.hostname !== 'raw.githubusercontent.com' ||
+                    !url.pathname.startsWith('/gabrielorei/salvavk-script/feature/modularizacao/modules/')) {
+                    throw new Error('Origem do módulo não autorizada: ' + item.id);
+                }
+            }
+            return manifest;
+        }
+        function readCache() {
+            try {
+                const raw = typeof GM_getValue === 'function' ? GM_getValue(CACHE_KEY, null) : null;
+                if (!raw) return null;
+                return typeof raw === 'string' ? JSON.parse(raw) : raw;
+            } catch (e) { return null; }
+        }
+        function writeCache(snapshot) {
+            try {
+                if (typeof GM_setValue === 'function') GM_setValue(CACHE_KEY, JSON.stringify(snapshot));
+            } catch (e) { log('Não foi possível atualizar o cache dos módulos:', e); }
+        }
+        async function verifySnapshot(snapshot) {
+            if (!snapshot || !snapshot.manifest || !snapshot.sources) throw new Error('Cache de módulos ausente ou inválido');
+            const manifest = validateManifest(snapshot.manifest);
+            for (const item of manifest.modules) {
+                const entry = snapshot.sources[item.id];
+                if (!entry || entry.version !== item.version || entry.sha256 !== item.sha256 || typeof entry.source !== 'string') {
+                    throw new Error('Cache incompleto para o módulo ' + item.id);
+                }
+                if (byteLength(entry.source) > MAX_MODULE_BYTES || await digest(entry.source) !== item.sha256.toLowerCase()) {
+                    throw new Error('Integridade do cache falhou para ' + item.id);
+                }
+            }
+            return snapshot;
+        }
+        async function downloadSnapshot() {
+            const response = await SalvaVK.network.request({ url: MANIFEST_URL, method: 'GET', timeout: 20000, headers: { 'Cache-Control': 'no-cache' } });
+            const raw = String(response.responseText || '');
+            if (!raw || byteLength(raw) > MAX_MANIFEST_BYTES) throw new Error('Manifesto vazio ou excede o limite');
+            const manifest = validateManifest(JSON.parse(raw));
+            const sources = Object.create(null);
+            for (const item of manifest.modules) {
+                const result = await SalvaVK.network.request({ url: item.url, method: 'GET', timeout: 30000, headers: { 'Cache-Control': 'no-cache' } });
+                const source = String(result.responseText || '');
+                if (!source || byteLength(source) > MAX_MODULE_BYTES) throw new Error('Módulo vazio ou excede o limite: ' + item.id);
+                const actual = await digest(source);
+                if (actual !== item.sha256.toLowerCase()) throw new Error('SHA-256 não confere para o módulo ' + item.id);
+                sources[item.id] = { version: item.version, sha256: actual, source };
+            }
+            return { savedAt: Date.now(), manifest, sources };
+        }
+        async function executeSnapshot(snapshot) {
+            const selected = snapshot.manifest.modules.filter(item => item.pages.includes(SalvaVK.core.page));
+            const compiled = selected.map(item => {
+                const entry = snapshot.sources[item.id];
+                return { item, run: new Function('SalvaVK', '"use strict";\n' + entry.source + '\n//# sourceURL=' + item.url) };
+            });
+            for (const item of compiled) {
+                const current = SalvaVK.modules.status(item.item.id);
+                if (!current) item.run(SalvaVK);
+            }
+            for (const item of compiled) {
+                const current = SalvaVK.modules.status(item.item.id);
+                if (current && current.state === 'registered') await SalvaVK.modules.start(item.item.id);
+                else if (current && current.state === 'failed') throw new Error('Módulo falhou ao registrar/iniciar: ' + item.item.id);
+            }
+            return selected.length;
+        }
+        async function start(force = false) {
+            if (pending && !force) return pending;
+            pending = (async () => {
+                state = 'loading'; lastError = null;
+                let snapshot = null, mode = 'network';
+                try {
+                    snapshot = await downloadSnapshot();
+                    writeCache(snapshot);
+                } catch (networkError) {
+                    const cached = readCache();
+                    if (!cached) throw networkError;
+                    snapshot = await verifySnapshot(cached);
+                    mode = 'cache';
+                    lastError = String(networkError && networkError.message || networkError);
+                }
+                const count = await executeSnapshot(snapshot);
+                loadedRelease = snapshot.manifest.release;
+                sourceMode = mode;
+                state = 'ready';
+                return Object.freeze({ state, release: loadedRelease, source: sourceMode, modules: count });
+            })().catch(error => {
+                state = 'failed';
+                lastError = String(error && error.message || error);
+                throw error;
+            }).finally(() => { pending = null; });
+            return pending;
+        }
+        return Object.freeze({
+            start: () => start(false),
+            refresh: () => start(true),
+            status: () => Object.freeze({ state, release: loadedRelease, source: sourceMode, error: lastError })
+        });
+    })();
+
     const SalvaVK = Object.freeze({
         core: Object.freeze({
             version: '6.33',
@@ -9378,6 +9505,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 });
             }
         }),
+        loader: moduleLoader,
         modules: Object.freeze({
             register(definition) {
                 if (!definition || typeof definition !== 'object') throw new TypeError('Definição de módulo inválida');
@@ -9519,6 +9647,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         });
         try { Object.defineProperty(PW, 'SalvaVKDiagnostics', { value: diagnostics, configurable: true }); } catch (e) { /* sandbox pode impedir a exposição */ }
     }
+
+    // Carrega manifesto e módulos sem bloquear o início do script legado.
+    moduleLoader.start().catch(error => log('Carregador modular falhou:', error));
 
     // ===== FIM DA INTERFACE DE COMPATIBILIDADE =====
 
