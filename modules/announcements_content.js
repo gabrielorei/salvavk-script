@@ -30,13 +30,13 @@ SalvaVK.modules.register({
                 {
                     emojis: ['😂', '🙄', '🔥'],
                     title: 'Reações personalizadas',
-                    text: 'Escolha a reação que melhor combina com o comentário.'
+                    text: 'Escolha o emoji que melhor combina com o comentário.'
                 },
                 {
                     icon: 'bell',
                     color: '#3d8bfd',
                     title: 'Nas notificações',
-                    text: 'Elas aparecem na aba de notificações, mostrando quem reagiu e qual foi a reação ao seu post.'
+                    text: 'Elas aparecem na aba de notificações, mostrando quem reagiu e qual foi a reação.'
                 },
                 {
                     icon: 'heart',
