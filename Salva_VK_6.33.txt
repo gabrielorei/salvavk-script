@@ -8716,34 +8716,96 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         const candidates = texts.map(text => {
             const link = text.closest('a[href*="post="]');
             const item = link && link.closest('[data-testid^="notification-item-"]');
-            return item && item.parentElement ? { item, host: item.parentElement } : null;
+            if (!item || !item.parentElement) return null;
+
+            // Nunca usar notificações agrupadas ("Fulano e mais N"): elas têm pilha de avatares
+            // de terceiros e não representam o formato individual que precisamos clonar.
+            const avatar = item.querySelector('a[data-testid="notification-avatar"]');
+            const avatarImages = avatar ? avatar.querySelectorAll('img') : [];
+            const extraAvatars = item.querySelector('[data-testid="notification-additional-avatar"]');
+            const header = item.querySelector('[data-testid="notification-header"]')?.textContent || '';
+            const preview = item.querySelector('[style*="textclamp-lines"]');
+            if (!avatar || avatarImages.length !== 1 || extraAvatars || /\bmais\s+\d+/i.test(header) || !preview) return null;
+            return { item, host: item.parentElement };
         }).filter(Boolean);
-        return candidates.find(x => x.item.querySelector('[style*="textclamp-lines"]')) || candidates[0] || null;
+        return candidates[0] || null;
+    }
+
+    // Busca pelo ID exato. O VK às vezes falha em start_comment_id; nesse caso,
+    // localizamos a posição por busca binária e consultamos o comentário por offset.
+    async function rxNtOwnFetchComment(topic, commentId) {
+        const m = String(topic).match(/^(-?\d+)_(\d+)$/);
+        if (!m) throw new Error('tópico inválido');
+        const groupId = Number(m[1]), topicId = Number(m[2]), wanted = Number(commentId);
+        const pick = result => (result && Array.isArray(result.items) ? result.items : [])
+            .find(x => Number(x.id != null ? x.id : x.comment_id) === wanted && !x.deleted) || null;
+
+        try {
+            const direct = await apiCall('board.getComments', {
+                group_id: groupId, topic_id: topicId,
+                start_comment_id: wanted, count: 1, offset: 0, sort: 'asc'
+            });
+            const exact = pick(direct);
+            if (exact) return exact;
+        } catch (e) {
+            if (/token|auth/i.test(String(e && e.message))) throw e;
+            rxLog('Busca direta do comentário ' + wanted + ' falhou; tentando por posição:', e && e.message);
+        }
+
+        const probe = async (offset, sort) => {
+            const result = await apiCall('board.getComments', {
+                group_id: groupId, topic_id: topicId,
+                count: 1, offset, sort
+            });
+            const item = result && Array.isArray(result.items) ? result.items[0] : null;
+            return {
+                total: Number(result && result.count) || 0,
+                id: item ? Number(item.id != null ? item.id : item.comment_id) : null
+            };
+        };
+
+        const [first, last] = await Promise.all([probe(0, 'asc'), probe(0, 'desc')]);
+        if (!first.total || first.id == null || last.id == null) throw new Error('o tópico não retornou comentários');
+        let lo = 0, hi = first.total - 1;
+        if (wanted <= first.id) hi = 0;
+        else if (wanted > last.id) lo = hi;
+        else {
+            for (let n = 0; hi - lo > 1 && n < 30; n++) {
+                const mid = Math.max(lo + 1, Math.min(hi - 1, (lo + hi) >> 1));
+                const p = await probe(mid, 'asc');
+                if (p.id == null) throw new Error('consulta vazia durante a busca por posição');
+                if (p.id >= wanted) hi = mid;
+                else lo = mid;
+            }
+        }
+        const result = await apiCall('board.getComments', {
+            group_id: groupId, topic_id: topicId,
+            count: 1, offset: hi, sort: 'asc'
+        });
+        const exact = pick(result);
+        if (!exact) throw new Error('comentário não encontrado no tópico (ID ' + wanted + ')');
+        return exact;
     }
 
     function rxNtOwnCommentText(row) {
         const key = String(row.topic) + ':' + String(row.comment_id);
         if (rxNtOwnComments.has(key)) return Promise.resolve(rxNtOwnComments.get(key));
         if (rxNtOwnCommentPending.has(key)) return rxNtOwnCommentPending.get(key);
-        if (Date.now() < (rxNtOwnCommentRetry.get(key) || 0)) return Promise.resolve('Carregando comentário…');
+        if (Date.now() < (rxNtOwnCommentRetry.get(key) || 0)) return Promise.resolve('Comentário indisponível no momento');
         const pending = (async () => {
-            let value = 'Comentário indisponível no momento', found = false;
+            let value = 'Comentário indisponível no momento', found = false, timer = 0;
             try {
-                const m = String(row.topic).match(/^(-?\d+)_(\d+)$/);
-                if (!m) throw new Error('tópico inválido');
-                const result = await apiCall('board.getComments', {
-                    group_id: Number(m[1]), topic_id: Number(m[2]),
-                    start_comment_id: Number(row.comment_id), count: 100, sort: 'asc', preview_length: 0
-                });
-                const items = Array.isArray(result) ? result : (result && Array.isArray(result.items) ? result.items : []);
-                const comment = items.find(x => Number(x.comment_id != null ? x.comment_id : x.id) === Number(row.comment_id));
-                if (comment) {
-                    value = String(comment.text || comment.message || '').trim() ||
-                        (comment.attachments && comment.attachments.length ? 'Comentário com anexo' : 'Comentário sem texto');
-                    found = true;
-                } else rxLog('A API não retornou o comentário ' + row.comment_id + '; nova tentativa será feita depois.');
+                const comment = await Promise.race([
+                    rxNtOwnFetchComment(row.topic, row.comment_id),
+                    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('tempo esgotado ao buscar comentário')), 15000); })
+                ]);
+                value = String(comment.text || comment.message || '').trim() ||
+                    (comment.attachments && comment.attachments.length ? 'Comentário com anexo' : 'Comentário sem texto');
+                found = true;
             } catch (e) {
                 rxLog('Não foi possível carregar o comentário ' + row.comment_id + ':', e && e.message);
+            } finally {
+                if (timer) clearTimeout(timer);
             }
             if (found) {
                 rxNtOwnComments.set(key, value);
@@ -8792,6 +8854,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             if (img) {
                 img.alt = user.name;
                 if (user.photo) img.src = user.photo;
+                else img.removeAttribute('src');
             }
             const header = item.querySelector('[data-testid="notification-header"]');
             if (header) header.textContent = user.name;
