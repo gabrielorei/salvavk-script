@@ -34,9 +34,9 @@ html[data-ar-dark] .svka-box{--svka-bg:var(--vkui--color_background_modal,#23232
 .svka-av{flex:none;width:2.1em;height:2.1em;border-radius:50%;background:var(--svka-sk)}
 .svka-lines{flex:1;min-width:0;display:flex;flex-direction:column;gap:.45em;padding-top:.2em}
 .svka-sk{height:.45em;border-radius:.3em;background:var(--svka-sk)}
-.svka-bar{display:flex;align-items:center;gap:.1em;width:fit-content;margin:.7em 0 0 auto;padding:.3em .5em;border-radius:2em;font-size:.9em;line-height:1;background:var(--svka-bg);box-shadow:0 .15em .7em rgba(0,0,0,.12)}
-.svka-bar span{display:block;padding:.24em;border-radius:.55em}
-.svka-bar span.on{font-size:1.2em;background:color-mix(in srgb,var(--svka-fg) 9%,transparent)}
+.svka-bar{display:flex;align-items:center;gap:.25em;width:fit-content;margin:.7em 0 0 auto;padding:.15em .6em;border-radius:2em;font-size:.98em;line-height:1;background:var(--svka-bg);box-shadow:0 .15em .7em rgba(0,0,0,.12)}
+.svka-bar span{display:block;padding:.3em;border-radius:.6em}
+.svka-bar span.on{font-size:1.2em;background:color-mix(in srgb,var(--svka-fg) 5%,transparent)}
 .svka-fill{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;padding:.3em 0;opacity:.17;filter:grayscale(.5);pointer-events:none;user-select:none;-webkit-mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent)}
 .svka-fill>div{display:flex;line-height:1}
 .svka-fill>.a{padding:0 12.5%}
@@ -256,7 +256,6 @@ html[data-ar-dark] .svka-ok{color:#111}
             announcementKeyHandler = onKey;
             document.addEventListener('keydown', announcementKeyHandler, true);
             (document.body || document.documentElement).appendChild(wrap);
-            try { okButton.focus({ preventScroll: true }); } catch (e) {}
         }
 
         function tick() {
