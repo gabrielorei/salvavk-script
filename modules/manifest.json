@@ -8,7 +8,7 @@
       "version": "1.0.0",
       "apiVersion": 1,
       "sha256": "0f74e8e5e785888898a37852e3e338e03832c8c2975741072862d61dced83ffc",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/reactions.js?ref=0adbfdb6cb9928cd54ed5834e236a3425fb31553",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/reactions.js?ref=0e72811a4936679a3bee48b7d5e8b74017e76b1c",
       "pages": [
         "topic",
         "notifications",
@@ -21,7 +21,7 @@
       "version": "1.0.0",
       "apiVersion": 1,
       "sha256": "f50c792003e7d98a963c9a5e42e708644157ec82eb9dc8cf281e7adc7ad555cc",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/games.js?ref=0adbfdb6cb9928cd54ed5834e236a3425fb31553",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/games.js?ref=0e72811a4936679a3bee48b7d5e8b74017e76b1c",
       "pages": [
         "topic",
         "notifications",
@@ -36,8 +36,8 @@
       "pages": [
         "topic"
       ],
-      "sha256": "dd194214b4e99cee4db80db60a6a1bc34b6538d6c8c4b1a1cfeab364d0279c16",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements_content.js?ref=0adbfdb6cb9928cd54ed5834e236a3425fb31553"
+      "sha256": "51a9d772d137786ec63076c710ea3abf4c5598cc2b22d0fb6d9890f821410181",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements_content.js?ref=0e72811a4936679a3bee48b7d5e8b74017e76b1c"
     },
     {
       "id": "announcements",
@@ -47,7 +47,7 @@
         "topic"
       ],
       "sha256": "a08c3dbc472a8607af5acec1eeca2ec4dc0ea68df5eaf5ae927c998ec29ce66b",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements.js?ref=0adbfdb6cb9928cd54ed5834e236a3425fb31553"
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements.js?ref=0e72811a4936679a3bee48b7d5e8b74017e76b1c"
     }
   ]
 }
