@@ -1440,7 +1440,28 @@ SalvaVK.modules.register({
     }
 
     // Reaplicação síncrona (roda antes da pintura): usa só o que já está no espelho / já resolvido
+    // Corrige prévias de mídia nas notificações nativas do VK (não passam pelo renderizador próprio).
+    function rxNtListMediaPreview() {
+        document.querySelectorAll('[data-testid^="notification-item-"]').forEach(item => {
+            try {
+                if (item.hasAttribute('data-ar-nt-own')) return;
+                const reactionText = item.querySelector('[data-testid="notification-text"]');
+                if (!reactionText || !RX_NT_LIKE_RE.test(reactionText.textContent || '')) return;
+                const preview = item.querySelector('[style*="textclamp-lines"]');
+                if (!preview) return;
+                const label = String(preview.textContent || '').trim().toLocaleLowerCase('ru');
+                const translated = label === 'видео' ? 'Comentário com vídeo' :
+                    label === 'стикер' ? 'Comentário com sticker' : '';
+                if (!translated) return;
+                if (preview.textContent.trim() !== translated) preview.textContent = translated;
+                preview.style.color = 'var(--vkui--color_text_secondary, rgb(129, 140, 153))';
+                preview.setAttribute('data-ar-nt-media-preview', label);
+            } catch (e) {}
+        });
+    }
+
     function rxNtListQuick() {
+        rxNtListMediaPreview();
         document.querySelectorAll('[data-testid="notification-text"]').forEach(t => {
             try {
                 if (!RX_NT_LIKE_RE.test(t.textContent || '')) { rxNtListClean(t, null); return; }
