@@ -1211,31 +1211,42 @@ SalvaVK.modules.register({
     // Texto das reações nas notificações próprias.
     function rxNtReactionPhrase(r, many) {
         const id = Number(r && r.id);
-        const emoji = r && r.fb ? ' ' + r.fb : '';
-        if (id === 22) return (many ? 'reviraram os olhos' : 'revirou os olhos') + emoji;
-        if (id === 17) return (many ? 'te acharam' : 'te achou') + ' um palhaço' + emoji;
+        const emojis = {
+            2: '🔥', 3: '😂', 26: '👏', 19: '😮', 39: '😈',
+            22: '🙄', 17: '🤡', 7: '😢', 31: '🤬'
+        };
+        const emoji = emojis[id] || (r && r.fb) || '';
+        if (id === 22) return (many ? 'revirando os olhos' : 'revirando os olhos') + (emoji ? ' ' + emoji : '');
+        if (id === 17) return (many ? 'te acharam' : 'te achou') + ' um palhaço' + (emoji ? ' ' + emoji : '');
         const labels = {
-            2: 'foguinho', 3: 'morrendo de rir', 26: 'palmas',
+            2: 'foguinho', 3: 'morrendo de rir', 26: 'batendo palmas',
             19: 'surpresa', 39: 'diabinho', 7: 'tristeza', 31: 'raiva'
         };
-        return labels[id] || (r && r.name ? r.name.toLocaleLowerCase('pt-BR') : 'reação') + emoji;
+        return (labels[id] || (r && r.name ? r.name.toLocaleLowerCase('pt-BR') : 'reação')) + (emoji ? ' ' + emoji : '');
     }
 
     function rxNtAppendPhrase(target, reaction, many) {
         const id = Number(reaction && reaction.id);
-        const phrase = rxNtReactionPhrase(reaction, many);
-        const strong = document.createElement('strong');
-        strong.textContent = phrase;
-        if (id === 22) {
-            target.appendChild(strong);
-            target.appendChild(document.createTextNode(' com seu comentário'));
+        const emoji = rxNtReactionPhrase(reaction, many).match(/[^ ]+$/)?.[0] || '';
+        const addStrong = value => {
+            const node = document.createElement('strong');
+            node.textContent = value;
+            target.appendChild(node);
+        };
+        const addText = value => target.appendChild(document.createTextNode(value));
+
+        if (id === 3 || id === 26 || id === 22) {
+            addText(many ? 'estão ' : 'está ');
+            addStrong(id === 3 ? 'morrendo de rir' : id === 26 ? 'batendo palmas' : 'revirando os olhos');
+            addText((emoji ? ' ' + emoji : '') + ' com seu comentário');
         } else if (id === 17) {
-            target.appendChild(strong);
-            target.appendChild(document.createTextNode(' com seu comentário'));
+            addText(many ? 'te acharam um ' : 'te achou um ');
+            addStrong('palhaço');
+            addText(' 🤡 com seu comentário');
         } else {
-            target.appendChild(document.createTextNode(many ? 'reagiram com ' : 'reagiu com '));
-            target.appendChild(strong);
-            target.appendChild(document.createTextNode(' ao seu comentário'));
+            addText(many ? 'reagiram com ' : 'reagiu com ');
+            addStrong(rxNtReactionPhrase(reaction, many));
+            addText(' ao seu comentário');
         }
     }
 
