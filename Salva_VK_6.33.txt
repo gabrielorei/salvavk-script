@@ -8897,21 +8897,32 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             if (key && !wanted.has(key)) n.remove();
         });
 
-        // As notificações próprias ficam sempre no topo da lista, mesmo que o primeiro
-        // aviso nativo seja agrupado (ex.: "Santiago e mais 2") e não possa servir de modelo.
-        // rows já está ordenado do mais recente para o mais antigo; reaproveitamos essa ordem.
-        const orderedOwn = rows.map(r => {
-            const key = [r.topic, r.comment_id, r.user_id].join('-');
-            return [...host.children].find(n => n.getAttribute &&
-                n.getAttribute('data-ar-nt-own') === key);
-        }).filter(Boolean);
-        if (orderedOwn.length) {
-            const firstNative = [...host.children].find(n =>
-                n.matches && n.matches('[data-testid^="notification-item-"]') &&
-                !n.hasAttribute('data-ar-nt-own'));
+        // Intercala avisos próprios e nativos pela data, em vez de forçar
+        // todas as reações negativas para o topo da lista.
+        const ownTimes = new Map(rows.map(r => [
+            [r.topic, r.comment_id, r.user_id].join('-'),
+            Date.parse(r.t || '')
+        ]));
+        const notificationItems = [...host.children].filter(n =>
+            n.matches && n.matches('[data-testid^="notification-item-"]'));
+        const timestampOf = item => {
+            const ownKey = item.getAttribute('data-ar-nt-own');
+            if (ownKey && ownTimes.has(ownKey)) return ownTimes.get(ownKey);
+            const testid = item.getAttribute('data-testid') || '';
+            const match = testid.match(/_(\d{10})$/);
+            if (match) return Number(match[1]) * 1000;
+            return 0;
+        };
+        const orderedItems = notificationItems
+            .map((item, index) => ({ item, index, time: timestampOf(item) }))
+            .sort((a, b) => (b.time - a.time) || (a.index - b.index));
+        if (orderedItems.length > 1) {
+            const marker = document.createComment('salvavk-notification-order');
+            host.insertBefore(marker, notificationItems[0]);
             const fragment = document.createDocumentFragment();
-            orderedOwn.forEach(n => fragment.appendChild(n));
-            host.insertBefore(fragment, firstNative || host.firstChild);
+            orderedItems.forEach(entry => fragment.appendChild(entry.item));
+            host.insertBefore(fragment, marker);
+            marker.remove();
         }
 
         // Busca textos sem bloquear a exibição dos avisos; no máximo quatro chamadas VK simultâneas.
