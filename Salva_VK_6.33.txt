@@ -9255,7 +9255,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     // Carregador remoto: manifesto validado, módulos verificados por SHA-256 e cache da última versão íntegra.
     const moduleLoader = (() => {
-        const MANIFEST_URL = 'https://raw.githubusercontent.com/gabrielorei/salvavk-script/2d6fa15115a930c779383968f07cf6f2564ff7f5/modules/manifest.json';
+        const MANIFEST_URL = 'https://salva-vk-api.salvavk.workers.dev/modules/manifest.json';
         const CACHE_KEY = 'SalvaVK_ModuleSnapshot_v1';
         const MAX_MANIFEST_BYTES = 128 * 1024, MAX_MODULE_BYTES = 1536 * 1024;
         let state = 'idle', lastError = null, loadedRelease = null, loadedCount = 0, pending = null, sourceMode = null;
@@ -9280,9 +9280,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 if (!/^[a-f0-9]{64}$/i.test(String(item.sha256 || ''))) throw new Error('SHA-256 inválido no módulo ' + item.id);
                 if (!Array.isArray(item.pages) || !item.pages.length || item.pages.some(p => !['topic', 'notifications', 'community', 'other'].includes(p))) throw new Error('Páginas inválidas no módulo ' + item.id);
                 const url = new URL(String(item.url || ''));
-                const rawPath = url.hostname === 'raw.githubusercontent.com' &&
-                    /^\/gabrielorei\/salvavk-script\/[a-f0-9]{40}\/modules\//i.test(url.pathname);
-                if (url.protocol !== 'https:' || !rawPath) {
+                const workerPath = url.hostname === 'salva-vk-api.salvavk.workers.dev' &&
+                    /^\/modules\/[a-z][a-z0-9_-]{1,63}\.js$/i.test(url.pathname);
+                if (url.protocol !== 'https:' || !workerPath) {
                     throw new Error('Origem do módulo não autorizada: ' + item.id);
                 }
             }
