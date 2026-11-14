@@ -94,10 +94,8 @@ SalvaVK.modules.register({
     let BOLA_ROLANDO_URL = HOSTS.bola[0] + '/';
     const RDC_STORAGE_KEY = 'vk_ar_rdc_state';
 
-    const isRdcAllowedPage = () => {
-        const path = location.pathname;
-        return /^\/board/i.test(path) || /^\/topic/i.test(path);
-    };
+    // O painel de jogos deve estar disponível em qualquer página do VK.
+    const isRdcAllowedPage = () => true;
 
     async function fetchBolaRolandoHTML() {
         let lastErr = new Error('sem endereço configurado: bola');
