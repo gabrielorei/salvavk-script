@@ -8908,14 +8908,39 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         const timestampOf = item => {
             const ownKey = item.getAttribute('data-ar-nt-own');
             if (ownKey && ownTimes.has(ownKey)) return ownTimes.get(ownKey);
-            const testid = item.getAttribute('data-testid') || '';
-            const match = testid.match(/_(\d{10})$/);
-            if (match) return Number(match[1]) * 1000;
-            return 0;
+
+            // O VK não expõe datetime/title: o horário real está no texto relativo.
+            const label = (item.querySelector('[data-testid="notification-time"]')?.textContent || '')
+                .trim().toLocaleLowerCase('pt-BR');
+            const now = Date.now();
+            if (!label) return NaN;
+            if (/^(agora|agora mesmo|há poucos segundos|menos de um minuto)/.test(label)) return now;
+            if (/\bontem\b/.test(label)) return now - 24 * 60 * 60 * 1000;
+
+            const match = label.match(/(?:há\s*)?(\d+)\s*(s|seg(?:undo)?s?|min(?:uto)?s?|h|hora?s?|d|dia?s?|semana?s?|m[eê]s(?:es)?|ano?s?)(?:\s+atr[aá]s)?/i);
+            if (!match) return NaN;
+            const amount = Number(match[1]);
+            const unit = match[2].toLowerCase();
+            const factors = {
+                s: 1000, seg: 1000, segundo: 1000, segundos: 1000,
+                min: 60000, minuto: 60000, minutos: 60000,
+                h: 3600000, hora: 3600000, horas: 3600000,
+                d: 86400000, dia: 86400000, dias: 86400000,
+                semana: 604800000, semanas: 604800000,
+                mês: 2592000000, meses: 2592000000,
+                ano: 31536000000, anos: 31536000000
+            };
+            const factor = factors[unit];
+            return factor ? now - amount * factor : NaN;
         };
         const orderedItems = notificationItems
             .map((item, index) => ({ item, index, time: timestampOf(item) }))
-            .sort((a, b) => (b.time - a.time) || (a.index - b.index));
+            .sort((a, b) => {
+                const av = Number.isFinite(a.time), bv = Number.isFinite(b.time);
+                if (av && bv) return (b.time - a.time) || (a.index - b.index);
+                if (av !== bv) return av ? -1 : 1;
+                return a.index - b.index;
+            });
         if (orderedItems.length > 1) {
             const marker = document.createComment('salvavk-notification-order');
             host.insertBefore(marker, notificationItems[0]);
