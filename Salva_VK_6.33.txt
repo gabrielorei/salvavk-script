@@ -8877,9 +8877,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             const names = actors.map(a => a.user.name);
             const header = item.querySelector('[data-testid="notification-header"]');
             if (header) {
+                const latestFirstName = (names[0] || 'Usuário').trim().split(/\\s+/)[0];
                 header.textContent = names.length <= 1 ? (names[0] || 'Usuário') :
-                    names.length === 2 ? names[0] + ' e ' + names[1] :
-                    names[0] + ', ' + names[1] + ' e mais ' + (names.length - 2);
+                    latestFirstName + ' e mais ' + (names.length - 1);
             }
 
             const time = item.querySelector('[data-testid="notification-time"]');
@@ -8949,7 +8949,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                     stack.style.height = '48px';
                     stack.setAttribute('data-testid', 'notification-additional-avatar');
 
-                    const shown = actors.slice(0, 3);
+                    const shown = actors.slice(0, 2);
                     shown.forEach(actor => {
                         const face = document.createElement('div');
                         face.className = 'meXqZJ JXVtku SEJNrr KZD2Fo ZjZOwx';
