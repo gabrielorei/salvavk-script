@@ -55,6 +55,43 @@ export default {
     const url = new URL(request.url);
     const method = request.method;
 
+    // Distribuição autenticada dos módulos do UserScript, mantendo o repositório privado.
+    if (method === "GET" && url.pathname.startsWith("/modules/")) {
+      if (!env.GITHUB_TOKEN) return json({ error: "Distribuição de módulos não configurada" }, 503);
+      const file = url.pathname.slice("/modules/".length);
+      if (!/^(manifest\.json|[a-z][a-z0-9_-]{1,63}\.js)$/.test(file)) {
+        return json({ error: "Arquivo de módulo inválido" }, 404);
+      }
+      const requestedRef = url.searchParams.get("ref");
+      const ref = file === "manifest.json" ? (requestedRef || "feature/modularizacao") : requestedRef;
+      if (!ref || !(ref === "feature/modularizacao" || /^[a-f0-9]{40}$/i.test(ref))) {
+        return json({ error: "Referência do módulo inválida" }, 400);
+      }
+      const githubUrl = "https://api.github.com/repos/gabrielorei/salvavk-script/contents/modules/" +
+        encodeURIComponent(file) + "?ref=" + encodeURIComponent(ref);
+      const upstream = await fetch(githubUrl, {
+        headers: {
+          "Authorization": "Bearer " + env.GITHUB_TOKEN,
+          "Accept": "application/vnd.github.raw+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "SalvaVK-Module-Distributor"
+        }
+      });
+      if (!upstream.ok) {
+        console.error("Distribuição GitHub:", upstream.status, await upstream.text());
+        return json({ error: "Não foi possível obter o arquivo de módulo" }, upstream.status === 404 ? 404 : 502);
+      }
+      return new Response(await upstream.arrayBuffer(), {
+        status: 200,
+        headers: {
+          ...cors,
+          "Content-Type": file === "manifest.json" ? "application/json; charset=utf-8" : "text/javascript; charset=utf-8",
+          "Cache-Control": file === "manifest.json" ? "no-store" : "public, max-age=300",
+          "X-Content-Type-Options": "nosniff"
+        }
+      });
+    }
+
     try {
       if (method === "GET") {
         const topicParam = url.searchParams.get("topic");
