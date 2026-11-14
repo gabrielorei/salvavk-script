@@ -1685,7 +1685,7 @@ SalvaVK.modules.register({
                     source.setAttribute('role', 'img');
                     source.setAttribute('aria-label', 'Notificação gerada pelo Salva VK');
                     source.setAttribute('data-ar-nt-own-source', '1');
-                    source.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5 5 8l3 3M16 5l3 3-3 3M14 4l-4 16"/></svg>';
+                    source.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2.75h8l4 4v14.5H6z"/><path d="M14 2.75v4h4M9 12l-2 2 2 2M15 12l2 2-2 2M13.5 11l-3 6"/></svg>';
                     source.style.cssText += ';display:inline-flex;align-items:center;justify-content:center;flex:none;pointer-events:none;opacity:.72;';
                     menu.replaceWith(source);
                 }
