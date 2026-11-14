@@ -1690,7 +1690,7 @@ SalvaVK.modules.register({
                     source.setAttribute('role', 'img');
                     source.setAttribute('aria-label', 'Notificação gerada pelo Salva VK');
                     source.setAttribute('data-ar-nt-own-source', '1');
-                    source.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2.5h8.2L19 7.3v13.2a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-16A2 2 0 0 1 7 2.5h-1z"/><path fill="var(--vkui--color_background_content,#fff)" d="M14 3.8v3.8h3.8z"/><path d="m9.3 11.2-2 2.1 2 2.1m5.4-4.2 2 2.1-2 2.1m-1.2-5.1-2.1 6" fill="none" stroke="var(--vkui--color_background_content,#fff)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+                    source.textContent = '</>';
                     source.style.cssText += ';display:inline-flex;align-items:center;justify-content:center;flex:none;pointer-events:none;opacity:.72;';
                     menu.replaceWith(source);
                 }
