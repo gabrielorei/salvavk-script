@@ -1,6 +1,7 @@
 name: Atualizar manifesto dos módulos
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - feature/modularizacao
