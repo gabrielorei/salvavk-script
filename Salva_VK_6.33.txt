@@ -1547,8 +1547,11 @@
         // Texto e anexos (refeito depois, pelo ciclo, se a API mudar o que devolve)
         fillBody(n, item);
 
-        const rep = n.querySelector('[data-testid="comment-reply"]');
-        const tsp = rep && rep.previousElementSibling && rep.previousElementSibling.querySelector('span');
+        // O horário fica em um span próprio no rodapé do comentário; não é irmão de comment-reply.
+        // Localiza pelo conteúdo para não depender das classes dinâmicas do VK.
+        const tsp = [...n.querySelectorAll('span')].find(el =>
+            /^(hoje|ontem|\\d{1,2}[./]\\d{1,2}[./]\\d{2,4}|\\d{1,2}:\\d{2})/i.test(el.textContent.trim())
+        );
         if (tsp) tsp.textContent = fmtTime(item.date);
         if (String(item.id) === '7383934') {
             const d = Number(item.date);
