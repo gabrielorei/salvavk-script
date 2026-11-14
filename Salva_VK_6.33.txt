@@ -1570,9 +1570,10 @@
 
         // O horário fica em um span próprio no rodapé do comentário; não é irmão de comment-reply.
         // Localiza pelo conteúdo para não depender das classes dinâmicas do VK.
-        const tsp = [...n.querySelectorAll('span')].find(el =>
-            /^(hoje|ontem|\\d{1,2}[./]\\d{1,2}[./]\\d{2,4}|\\d{1,2}:\\d{2})/i.test(el.textContent.trim())
-        );
+        const rep0 = n.querySelector('[data-testid="comment-reply"]');
+        const tsp = (rep0 && rep0.previousElementSibling && rep0.previousElementSibling.querySelector('span')) ||
+              [...n.querySelectorAll('span')].find(el =>
+                  /^(hoje|ontem|\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}:\d{2})/i.test(el.textContent.trim()));
         if (tsp) tsp.textContent = fmtTime(item.date);
         if (String(item.id) === '7383934') {
             const d = Number(item.date);
@@ -5718,6 +5719,27 @@
         if (Date.now() - scrollEndSince > 3000) drop();
     }
 
+    // ---------- Troca de página: descarta cópias e consultas em andamento ----------
+    const NAV_SETTLE_MS = 1200;        // espera o VK assentar depois de uma troca de página
+    const EMPTY_LIST_GRACE_MS = 4000;  // lista vazia: só usa o molde embutido depois disso
+    let navEpoch = 0, navStamp = 0, navPath = location.pathname;
+    function navChanged(why) {
+        navEpoch++;
+        navStamp = Date.now();
+        tick.tail = null;
+        document.querySelectorAll('[data-ar-new]').forEach(n => n.remove());
+        log('Troca de página (' + why + '): cópias removidas e consulta em andamento descartada');
+    }
+    document.addEventListener('click', e => {
+        const t = e.target && e.target.closest && e.target.closest('button[aria-label],a[href*="offset="]');
+        if (!t) return;
+        const isPageBtn = (t.tagName === 'BUTTON' && /^\d+$/.test(t.getAttribute('aria-label') || '') && /vkuiButton/.test(t.className)) ||
+              (t.tagName === 'A' && /offset=/.test(t.getAttribute('href') || ''));
+        if (isPageBtn) navChanged('clique na paginação');
+    }, true);
+    window.addEventListener('popstate', () => navChanged('voltar/avançar'));
+    setInterval(() => { if (location.pathname !== navPath) { navPath = location.pathname; navChanged('outro tópico'); } }, 150);
+
     // ---------- 5) Ciclo principal ----------
     let busy = false;
     let cycles = 0;
@@ -5901,7 +5923,9 @@
         if (tabMode.mode === 'idle') { tabIdle(); return; }
         busy = true;
         const t0 = performance.now();
+        const epoch = navEpoch;
         try {
+            if (Date.now() - navStamp < NAV_SETTLE_MS) return;   // o VK ainda está trocando de página
             const liveList = document.querySelector(LIST_SEL);
             if (!liveList) { status('⚠ lista de comentários não encontrada'); return; }
             if (!tpl) synthTpl();   // tenta montar a consulta com as credenciais de outras chamadas do VK
@@ -5922,6 +5946,7 @@
             const offset = parseInt(sp.get('offset'), 10) || 0;
 
             const resp = await callApi();
+            if (epoch !== navEpoch) return;
             const baseItems = (resp.items || []).filter(i => !i.deleted);
             const total = typeof resp.count === 'number' ? resp.count : offset + baseItems.length;
 
@@ -5950,6 +5975,7 @@
                     tick.tail = { key, t: Date.now(), items: extra };
                 }
                 items = baseItems.concat(extra);
+                if (epoch !== navEpoch) return;
             }
             failures = 0;
             synthFails = 0;
@@ -5999,8 +6025,10 @@
                 log('1º comentário do tópico (id ' + firstId + ') não está na lista; fica só no topo. Assinaturas fora da lista:', outSigs.size);
             }
             let tplPool = live;
+            if (!live.length) { if (!tick.emptySince) tick.emptySince = Date.now(); } else tick.emptySince = 0;
             if (!tplPool.length && fresh.length) {
-                tplPool = [builtinTpl()];   // lista sem comentários para clonar (ex.: tópico só com o 1º post): usa o molde embutido
+                if (Date.now() - tick.emptySince < EMPTY_LIST_GRACE_MS) { status('⏳ aguardando o VK desenhar a página…'); return; }
+                tplPool = [builtinTpl()];
                 if (!tick.loggedBuiltin) { tick.loggedBuiltin = true; log('Lista nativa vazia; usando o molde embutido de comentário'); }
             }
             if (fresh.length && tplPool.length) {
