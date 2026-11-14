@@ -9345,8 +9345,8 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 const allowed = new Set([
                     'futebolgratis.org', 'www.futebolgratis.org', 'bolarolando.org',
                     'youtube.com', 'www.youtube.com', 'futnatv.net',
-                    'api.reidoscanais.cam', 'api.reidoscanais.my', 'reidoscanais.my',
-                    'api.ppv.st', 'raw.githubusercontent.com', 'cdn.jsdelivr.net',
+                    'api.reidoscanais.cam', 'api.reidoscanais.my', 'reidoscanais.my', 'reidoscanais.cam', 'reidoscanais.si',
+                    'api.ppv.st', 'ppv.st', 'raw.githubusercontent.com', 'cdn.jsdelivr.net',
                     'vkuserphoto.ru', 'vk.ru', 'vk.com', 'userapi.com',
                     'salva-vk-api.salvavk.workers.dev'
                 ]);
