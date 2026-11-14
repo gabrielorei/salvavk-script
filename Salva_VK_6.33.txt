@@ -4501,6 +4501,18 @@
                 if (off < total) await sleep(TOP_LIKED_PAUSE_MS);
             }
             console.log('[Salva VK] Varredura do post em destaque: ' + lidos + ' posts lidos (~' + Math.ceil(lidos / POSTS_PER_PAGE) + ' páginas de ' + POSTS_PER_PAGE + ') em ' + lotes + ' lote(s), posts ' + (start + 1) + '–' + Math.min(total, start + lidos) + ' de ' + total + ' | tópico ' + (oldTopic ? 'antigo' : 'recente') + ' | ' + ((Date.now() - scanT0) / 1000).toFixed(1) + ' s');
+            // Confirma o vencedor diretamente pelo ID: a varredura pode trazer uma data incompleta/desatualizada na abertura.
+            // Usa o mesmo mecanismo robusto do post fixado (start_comment_id e fallback por posição), sem varrer o tópico de novo.
+            if (best) {
+                try {
+                    const confirmed = await topFetchById(best.id, authors);
+                    if (topState.key !== myKey) return;
+                    if (confirmed) best = confirmed;
+                    else log('Post em destaque: não consegui confirmar os dados do comentário', best.id, '; mantendo o resultado da varredura');
+                } catch (eConfirm) {
+                    log('Post em destaque: falha ao confirmar a data do comentário', best.id, '-', eConfirm && eConfirm.message, '; mantendo o resultado da varredura');
+                }
+            }
             // a varredura vale como verdade (o sondador não roda durante ela): o 1º post diz qual é o post fixado (ou nenhum)
             const localNewer = (topState.pinLocalAt || 0) > scanT0;   // o autor fixou/desfixou depois que a varredura leu o 1º post: vale o que ele fez
             const keepPin = !!pinId && pinnedCommentId() === String(pinId);   // o fixado já foi carregado no começo da varredura
