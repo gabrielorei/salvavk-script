@@ -1,6 +1,18 @@
 {
   "schemaVersion": 1,
   "apiVersion": 1,
-  "release": "6.33-modularizacao-dev1",
-  "modules": []
+  "release": "6.33-modularizacao-dev2",
+  "modules": [
+    {
+      "id": "reactions",
+      "version": "1.0.0",
+      "apiVersion": 1,
+      "sha256": "cbb096f3bd9c91792fa1df7e9cec9719114c7c9a9200f9aa6b838fc18c0d8815",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/reactions.js?ref=feature/modularizacao",
+      "pages": [
+        "topic",
+        "notifications"
+      ]
+    }
+  ]
 }
