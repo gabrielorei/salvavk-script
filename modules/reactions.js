@@ -1676,7 +1676,19 @@ SalvaVK.modules.register({
                 oldLink.href = 'https://vk.ru/topic-' + group.topic + '?post=' + group.comment_id;
                 oldLink.setAttribute('data-ar-nt-own-link', '1');
                 const menu = item.querySelector('[data-testid="notification-menu"]');
-                if (menu) menu.remove();
+                if (menu) {
+                    // Mantém o espaço/posicionamento do menu nativo, mas identifica a origem
+                    // sem simular um botão de opções que esta notificação não possui.
+                    const source = document.createElement('span');
+                    source.className = menu.className || '';
+                    source.style.cssText = menu.style.cssText || '';
+                    source.setAttribute('role', 'img');
+                    source.setAttribute('aria-label', 'Notificação gerada pelo Salva VK');
+                    source.setAttribute('data-ar-nt-own-source', '1');
+                    source.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5 5 8l3 3M16 5l3 3-3 3M14 4l-4 16"/></svg>';
+                    source.style.cssText += ';display:inline-flex;align-items:center;justify-content:center;flex:none;pointer-events:none;opacity:.72;';
+                    menu.replaceWith(source);
+                }
                 item.querySelectorAll('[data-ar-nt-list], .ar-nt-bd').forEach(n => n.remove());
                 item.querySelectorAll('[data-ar-nt-hide]').forEach(n => n.removeAttribute('data-ar-nt-hide'));
 
