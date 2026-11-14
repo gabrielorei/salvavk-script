@@ -1209,14 +1209,19 @@ SalvaVK.modules.register({
     //  - todos reagiram, reações diferentes: "reagiram ao seu comentário [ícones]"
     //  - só alguns reagiram: mantém o texto original e acrescenta os ícones
     // Texto das reações nas notificações próprias.
-    function rxNtReactionPhrase(r, many) {
-        const id = Number(r && r.id);
+    function rxNtReactionEmoji(r) {
         const emojis = {
             2: '🔥', 3: '😂', 26: '👏', 19: '😮', 39: '😈',
             22: '🙄', 17: '🤡', 7: '😢', 31: '🤬'
         };
-        const emoji = emojis[id] || (r && r.fb) || '';
-        if (id === 22) return (many ? 'revirando os olhos' : 'revirando os olhos') + (emoji ? ' ' + emoji : '');
+        const id = Number(r && r.id);
+        return emojis[id] || (r && r.fb) || '';
+    }
+
+    function rxNtReactionPhrase(r, many) {
+        const id = Number(r && r.id);
+        const emoji = rxNtReactionEmoji(r);
+        if (id === 22) return 'revirando os olhos' + (emoji ? ' ' + emoji : '');
         if (id === 17) return (many ? 'te acharam' : 'te achou') + ' um palhaço' + (emoji ? ' ' + emoji : '');
         const labels = {
             2: 'foguinho', 3: 'morrendo de rir', 26: 'batendo palmas',
@@ -1227,7 +1232,7 @@ SalvaVK.modules.register({
 
     function rxNtAppendPhrase(target, reaction, many) {
         const id = Number(reaction && reaction.id);
-        const emoji = rxNtReactionPhrase(reaction, many).match(/[^ ]+$/)?.[0] || '';
+        const emoji = rxNtReactionEmoji(reaction);
         const addStrong = value => {
             const node = document.createElement('strong');
             node.textContent = value;
@@ -1242,7 +1247,7 @@ SalvaVK.modules.register({
         } else if (id === 17) {
             addText(many ? 'te acharam um ' : 'te achou um ');
             addStrong('palhaço');
-            addText(' 🤡 com seu comentário');
+            addText((emoji ? ' ' + emoji : '') + ' com seu comentário');
         } else {
             addText(many ? 'reagiram com ' : 'reagiu com ');
             addStrong(rxNtReactionPhrase(reaction, many));
@@ -1255,13 +1260,21 @@ SalvaVK.modules.register({
         const T = s => document.createTextNode(s);
         if (got.length === rs.length && uniq.length === 1) {
             const out = [], many = rs.length > 1;
-            const phrase = rxNtReactionPhrase(uniq[0], many);
-            const strong = document.createElement('strong');
-            strong.textContent = phrase;
-            const id = Number(uniq[0].id);
-            if (id === 22 || id === 17) {
-                out.push(T(' '), strong, T(' com seu comentário '));
+            const reaction = uniq[0];
+            const id = Number(reaction.id);
+            const emoji = rxNtReactionEmoji(reaction);
+            if (id === 3 || id === 26 || id === 22) {
+                const strong = document.createElement('strong');
+                strong.textContent = id === 3 ? 'morrendo de rir' : id === 26 ? 'batendo palmas' : 'revirando os olhos';
+                out.push(T(many ? ' estão ' : ' está '), strong, T((emoji ? ' ' + emoji : '') + ' com seu comentário '));
+            } else if (id === 17) {
+                const strong = document.createElement('strong');
+                strong.textContent = 'palhaço';
+                out.push(T(many ? ' te acharam um ' : ' te achou um '), strong, T((emoji ? ' ' + emoji : '') + ' com seu comentário '));
             } else {
+                const phrase = rxNtReactionPhrase(reaction, many);
+                const strong = document.createElement('strong');
+                strong.textContent = phrase;
                 out.push(T(' ' + (many ? RX_NT.verbMany : RX_NT.verbOne) + ' com '), strong, T(' ao seu comentário '));
             }
             return out;
