@@ -8908,50 +8908,70 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 previews.push({ row: group.rows[0], item, preview, commentKey });
             }
 
-            // Empilha até três avatares e mantém o selo circular do emoji no canto.
-            const avatar = item.querySelector('a[data-testid="notification-avatar"]');
+            // Com uma pessoa, preserva exatamente o avatar nativo do template.
+            // A pilha com posicionamento absoluto só é aplicada quando há mais de um ator.
+            let avatar = item.querySelector('a[data-testid="notification-avatar"]');
             const avatarHost = avatar && avatar.parentElement;
             if (avatar && avatarHost && actors.length) {
-                const avatarTemplate = avatar.cloneNode(true);
-                avatarHost.querySelectorAll('a[data-testid="notification-avatar"], a[data-ar-nt-own-avatar]')
-                    .forEach(n => n.remove());
-                avatarHost.querySelectorAll(':scope > .ar-nt-bd').forEach(n => n.remove());
                 avatarHost.setAttribute('data-ar-nt-host', '1');
-                // Mantém as dimensões nativas do contêiner do avatar.
-                // O selo .ar-nt-bd usa right/bottom relativos a esse contêiner;
-                // forçar 48px aqui deslocava o círculo em layouts com outra medida.
-                avatarHost.style.position = 'relative';
+                avatarHost.querySelectorAll(':scope > .ar-nt-bd').forEach(n => n.remove());
 
-                const shown = actors.slice(0, 3);
-                const positions = shown.length === 1
-                    ? [[0, 0, 48]]
-                    : shown.length === 2
-                        ? [[0, 0, 32], [16, 16, 32]]
-                        : [[0, 0, 28], [20, 0, 28], [10, 20, 28]];
-                shown.forEach((actor, index) => {
-                    const a = avatarTemplate.cloneNode(true);
-                    a.setAttribute('data-ar-nt-own-avatar', '1');
-                    a.setAttribute('data-testid', index === 0 ? 'notification-avatar' : 'notification-avatar-group');
-                    a.href = actor.user.href;
-                    const img = a.querySelector('img');
+                if (actors.length === 1) {
+                    // Desfaz qualquer estilo de empilhamento de uma renderização anterior.
+                    const candidates = [...avatarHost.querySelectorAll('a[data-testid="notification-avatar"], a[data-ar-nt-own-avatar]')];
+                    avatar = candidates[0] || avatar;
+                    candidates.slice(1).forEach(n => n.remove());
+                    avatar.removeAttribute('data-ar-nt-own-avatar');
+                    avatar.setAttribute('data-testid', 'notification-avatar');
+                    ['position', 'left', 'top', 'z-index', 'border-radius', 'overflow', 'box-sizing', 'border']
+                        .forEach(prop => avatar.style.removeProperty(prop));
+                    ['position', 'width', 'height', 'flex'].forEach(prop => avatarHost.style.removeProperty(prop));
+                    const actor = actors[0];
+                    avatar.href = actor.user.href;
+                    const img = avatar.querySelector('img');
                     if (img) {
                         img.alt = actor.user.name;
                         if (actor.user.photo) img.src = actor.user.photo;
                         else img.removeAttribute('src');
                     }
-                    const [left, top, size] = positions[index];
-                    a.style.position = 'absolute';
-                    a.style.left = left + 'px';
-                    a.style.top = top + 'px';
-                    a.style.width = size + 'px';
-                    a.style.height = size + 'px';
-                    a.style.zIndex = String(index + 1);
-                    a.style.borderRadius = '50%';
-                    a.style.overflow = 'hidden';
-                    a.style.boxSizing = 'border-box';
-                    a.style.border = '2px solid var(--vkui--color_background_content,#fff)';
-                    avatarHost.appendChild(a);
-                });
+                } else {
+                    const avatarTemplate = avatar.cloneNode(true);
+                    avatarHost.querySelectorAll('a[data-testid="notification-avatar"], a[data-ar-nt-own-avatar]')
+                        .forEach(n => n.remove());
+                    avatarHost.style.position = 'relative';
+                    avatarHost.style.width = '48px';
+                    avatarHost.style.height = '48px';
+                    avatarHost.style.flex = '0 0 48px';
+
+                    const shown = actors.slice(0, 3);
+                    const positions = shown.length === 2
+                        ? [[0, 0, 32], [16, 16, 32]]
+                        : [[0, 0, 28], [20, 0, 28], [10, 20, 28]];
+                    shown.forEach((actor, index) => {
+                        const a = avatarTemplate.cloneNode(true);
+                        a.setAttribute('data-ar-nt-own-avatar', '1');
+                        a.setAttribute('data-testid', index === 0 ? 'notification-avatar' : 'notification-avatar-group');
+                        a.href = actor.user.href;
+                        const img = a.querySelector('img');
+                        if (img) {
+                            img.alt = actor.user.name;
+                            if (actor.user.photo) img.src = actor.user.photo;
+                            else img.removeAttribute('src');
+                        }
+                        const [left, top, size] = positions[index];
+                        a.style.position = 'absolute';
+                        a.style.left = left + 'px';
+                        a.style.top = top + 'px';
+                        a.style.width = size + 'px';
+                        a.style.height = size + 'px';
+                        a.style.zIndex = String(index + 1);
+                        a.style.borderRadius = '50%';
+                        a.style.overflow = 'hidden';
+                        a.style.boxSizing = 'border-box';
+                        a.style.border = '2px solid var(--vkui--color_background_content,#fff)';
+                        avatarHost.appendChild(a);
+                    });
+                }
 
                 const badge = document.createElement('span');
                 badge.className = 'ar-nt-bd';
