@@ -8684,19 +8684,17 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         });
     }
 
-    // Ao clicar no item próprio, mantém a navegação para o comentário e fecha o painel do VK.
+    // Ao clicar na notificação própria, força uma navegação completa para o tópico/comentário.
+    // Isso evita que o roteador SPA do VK intercepte o clique e preserve o estado antigo da página.
     document.addEventListener('click', e => {
         const link = e.target && e.target.closest ? e.target.closest('a[data-ar-nt-own-link]') : null;
         if (!link) return;
-        setTimeout(() => {
-            try {
-                const esc = { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true };
-                document.dispatchEvent(new KeyboardEvent('keydown', esc));
-                document.dispatchEvent(new KeyboardEvent('keyup', esc));
-                PW.dispatchEvent(new KeyboardEvent('keydown', esc));
-                PW.dispatchEvent(new KeyboardEvent('keyup', esc));
-            } catch (err) {}
-        }, 80);
+        const href = link.href;
+        if (!href) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+        PW.location.href = href;
     }, true);
 
     function rxNtOwnTime(value) {
