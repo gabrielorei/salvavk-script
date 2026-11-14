@@ -1482,7 +1482,7 @@ SalvaVK.modules.register({
                 const key = String(a[0]);
                 const value = rxNtOwnFormatPreview(String(a[1]));
                 // Entradas antigas com o rótulo genérico serão atualizadas pela API.
-                if (value !== 'Comentário com anexo' && value !== 'Comentário sem texto') {
+                if (value !== 'Comentário com anexo' && value !== 'Comentário sem texto' && !rxNtOwnMediaLabelFromText(value)) {
                     rxNtOwnComments.set(key, value);
                     if (a[2] === true) rxNtOwnMediaOnly.add(key);
                 }
@@ -1611,6 +1611,14 @@ SalvaVK.modules.register({
         return String(value || '').replace(/\[(?:id|club|public)\d+(?::[^\]]*)?\|([^\]]+)\]/gi, '$1');
     }
 
+    // O VK pode devolver rótulos de anexos como se fossem o texto do comentário.
+    function rxNtOwnMediaLabelFromText(value) {
+        const label = String(value || '').trim().toLocaleLowerCase('ru');
+        if (label === 'видео') return 'Comentário com vídeo';
+        if (label === 'стикер') return 'Comentário com sticker';
+        return '';
+    }
+
     // Identifica os tipos de mídia retornados pelo board.getComments do VK.
     function rxNtOwnAttachmentLabel(comment) {
         const attachments = Array.isArray(comment && comment.attachments) ? comment.attachments : [];
@@ -1648,7 +1656,11 @@ SalvaVK.modules.register({
                     new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('tempo esgotado ao buscar comentário')), 15000); })
                 ]);
                 const commentText = rxNtOwnFormatPreview(String(comment.text || comment.message || '').trim());
-                if (commentText) {
+                const mediaLabel = rxNtOwnMediaLabelFromText(commentText);
+                if (mediaLabel) {
+                    value = mediaLabel;
+                    rxNtOwnMediaOnly.add(key);
+                } else if (commentText) {
                     value = commentText;
                     rxNtOwnMediaOnly.delete(key);
                 } else {
