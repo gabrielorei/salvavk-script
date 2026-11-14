@@ -28,6 +28,26 @@
         "community",
         "other"
       ]
+    },
+    {
+      "id": "announcements_content",
+      "version": "1.0.0",
+      "apiVersion": 1,
+      "pages": [
+        "topic"
+      ],
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements_content.js?ref=f2077667470fb6744ad1ceb1b5f3f53c7793695c"
+    },
+    {
+      "id": "announcements",
+      "version": "1.0.0",
+      "apiVersion": 1,
+      "pages": [
+        "topic"
+      ],
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements.js?ref=f2077667470fb6744ad1ceb1b5f3f53c7793695c"
     }
   ]
 }
