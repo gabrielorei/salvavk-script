@@ -406,7 +406,7 @@ SalvaVK.modules.register({
     function rdcSaveCache(items, bolaErr) {
         try {
             LS.setJson(RDC_CACHE_KEY, {
-                at: Date.now(), day: rdcTodayKey(), bolaErr: !!bolaErr,
+                schema: 2, at: Date.now(), day: rdcTodayKey(), bolaErr: !!bolaErr,
                 items: items.map(it => ({ startMs: Number.isFinite(it.startMs) ? it.startMs : null, src: it.src, link: it.link, title: it.title, sub: it.sub, timeLabel: it.timeLabel }))
             });
         } catch (e) { /* sem espaço ou bloqueado: segue sem cache salvo */ }
@@ -415,7 +415,7 @@ SalvaVK.modules.register({
     function rdcLoadCache() {
         try {
             const c = LS.json(RDC_CACHE_KEY);
-            if (!c || !Array.isArray(c.items) || c.day !== rdcTodayKey() || Date.now() - c.at > RDC_CACHE_MAX_AGE_MS) return null;
+            if (!c || c.schema !== 2 || !Array.isArray(c.items) || c.day !== rdcTodayKey() || Date.now() - c.at > RDC_CACHE_MAX_AGE_MS) return null;
             return { bolaErr: !!c.bolaErr, items: c.items.map(it => ({ ...it, startMs: it.startMs == null ? NaN : it.startMs })) };
         } catch (e) { return null; }
     }
