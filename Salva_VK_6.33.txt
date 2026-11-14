@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Salva VKTesteChatDois
+// @name         SalvaVK
 // @namespace    local.vk.autorefresh
 // @version      6.31
 // @description  Salva VK: atualização de comentários, mídia, destaque e reações personalizadas
@@ -6098,7 +6098,7 @@
 
             const secs = ((performance.now() - t0) / 1000).toFixed(2);
             cycles++;
-            status('⚡ v6.30 #' + cycles + ' · ' + secs + 's · ' +
+            status('⚡ v6.31 #' + cycles + ' · ' + secs + 's · ' +
                    (offset + 1) + '-' + (offset + items.length) + ' de ' + total +
                    (fresh.length ? ' · +' + fresh.length + ' NOVO(S)' : '') + (tailCapped ? ' · limite da rolagem contínua' : ''));
 
@@ -6645,7 +6645,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     const SalvaVK = Object.freeze({
         core: Object.freeze({
-            version: '6.33',
+            version: '6.31',
             apiVersion: 1,
             get accountId() { return meId || null; },
             get page() {
@@ -6918,5 +6918,5 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     // ===== FIM DA INTERFACE DE COMPATIBILIDADE =====
 
     loop();
-    log('Ativo (v6.33). Pausa de', INTERVAL_MS, 'ms entre consultas. Abas em segundo plano:', BG_TABS, '| id da aba:', TAB_ID);
+    log('Ativo (v6.31). Pausa de', INTERVAL_MS, 'ms entre consultas. Abas em segundo plano:', BG_TABS, '| id da aba:', TAB_ID);
 })();
