@@ -8,7 +8,7 @@
       "version": "1.0.0",
       "apiVersion": 1,
       "sha256": "61636013960ebbe768d5d5edeb81d4a3224d9d663e6824d9081fa7ab6606e7a2",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/reactions.js?ref=d767bb5a002d9cd5a269f04c9c67e1fc40d3cc82",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/reactions.js?ref=b4603d97bef6623e4154bace41eece53b503e0c1",
       "pages": [
         "topic",
         "notifications",
@@ -21,7 +21,7 @@
       "version": "1.0.0",
       "apiVersion": 1,
       "sha256": "f49518a0554937f2de64a3e10c401c9089c2077f7649b12bd892689eba34b449",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/games.js?ref=d767bb5a002d9cd5a269f04c9c67e1fc40d3cc82",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/games.js?ref=b4603d97bef6623e4154bace41eece53b503e0c1",
       "pages": [
         "topic",
         "notifications",
