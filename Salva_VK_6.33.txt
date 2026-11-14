@@ -523,8 +523,9 @@
     let vkSessionCapturedAt = 0, vkSessionOrigin = null, vkSessionRevision = 0;
     const vkSessionListeners = new Set();
     function vkSessionSnapshot() {
+        const token = base && ((base.pairs.find(p => p[0] === 'access_token') || [])[1]);
         return Object.freeze({
-            ready: !!(vkSessionCapturedAt && base),
+            ready: !!(vkSessionCapturedAt && token && !isBadToken(token)),
             capturedAt: vkSessionCapturedAt || null,
             origin: vkSessionOrigin,
             revision: vkSessionRevision,
@@ -9301,7 +9302,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             onSessionChange(callback) {
                 if (typeof callback !== 'function') throw new TypeError('callback precisa ser uma função');
                 vkSessionListeners.add(callback);
-                if (vkSessionCapturedAt) { try { callback(vkSessionSnapshot()); } catch (e) { log('Listener de sessão VK falhou:', e); } }
+                if (vkSessionSnapshot().ready) { try { callback(vkSessionSnapshot()); } catch (e) { log('Listener de sessão VK falhou:', e); } }
                 return () => vkSessionListeners.delete(callback);
             },
             async request(method, params = {}) {
