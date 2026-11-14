@@ -114,7 +114,7 @@ html[data-ar-dark] .ari-ok{color:#111}.ari-ok:hover{filter:brightness(1.1)}.ari-
             try { okButton.focus({ preventScroll: true }); } catch (e) {}
         }
         function tick() {
-            if (done || announcementWrap || !document.body || !TOPIC_RE.test(location.pathname)) return;
+            if (done || announcementWrap || document.querySelector('.ari-wrap') || !document.body || !TOPIC_RE.test(location.pathname)) return;
             if (document.visibilityState !== 'visible' || !document.querySelector(LIST_SELECTOR)) return;
             const data = store.json('content', null);
             if (!data || !data.id) return;
