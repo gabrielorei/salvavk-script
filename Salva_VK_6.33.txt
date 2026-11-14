@@ -8917,10 +8917,10 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                     .forEach(n => n.remove());
                 avatarHost.querySelectorAll(':scope > .ar-nt-bd').forEach(n => n.remove());
                 avatarHost.setAttribute('data-ar-nt-host', '1');
+                // Mantém as dimensões nativas do contêiner do avatar.
+                // O selo .ar-nt-bd usa right/bottom relativos a esse contêiner;
+                // forçar 48px aqui deslocava o círculo em layouts com outra medida.
                 avatarHost.style.position = 'relative';
-                avatarHost.style.width = '48px';
-                avatarHost.style.height = '48px';
-                avatarHost.style.flex = '0 0 48px';
 
                 const shown = actors.slice(0, 3);
                 const positions = shown.length === 1
