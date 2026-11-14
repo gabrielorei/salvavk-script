@@ -9353,7 +9353,6 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 let snapshot = null, mode = 'network';
                 try {
                     snapshot = await downloadSnapshot();
-                    writeCache(snapshot);
                 } catch (networkError) {
                     const cached = readCache();
                     if (!cached) throw networkError;
@@ -9362,6 +9361,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                     lastError = String(networkError && networkError.message || networkError);
                 }
                 const count = await executeSnapshot(snapshot);
+                if (mode === 'network') writeCache(snapshot);
                 loadedRelease = snapshot.manifest.release;
                 sourceMode = mode;
                 state = 'ready';
