@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Salva VK
+// @name         Salva VKTesteChatDois
 // @namespace    local.vk.autorefresh
 // @version      6.31
 // @description  Salva VK: atualização de comentários, mídia, destaque e reações personalizadas
@@ -126,7 +126,7 @@
     const RENEW_RETRY_MS = 20000;    // espera mínima entre duas tentativas automáticas de renovar a consulta
     const SHARPEN_IMAGES = true;     // troca a miniatura pequena do VK por um tamanho que cubra o espaço exibido (imagens mais nítidas)
     const AUTO_BUILD_QUERY = true;   // monta a consulta sozinho a partir de outras chamadas do VK (sem precisar clicar)
-    const NOTIFICATIONS_SAME_TAB = true; // clicar numa notificação abre o tópico na mesma aba (em vez de uma nova)
+    const NOTIFICATIONS_SAME_TAB = false; // notificações abrem o tópico em uma nova aba
     const PAGE_BUTTON_MAX_JUMP = 2;  // a paginação do VK só tem vizinhas (« 2 3 4 5 »): acima disso, em vez de ir página por página, recarrega direto na página
     const SET_OFFSET_ATTR = true;    // comentários acrescentados pelo script recebem data-comment-offset (evita o VK gravar offset=0 no endereço)
     const OWN_POST_GRACE_MS = 6000;  // depois de postar, o script NÃO desenha a própria cópia do seu comentário por este tempo (o VK já mostra o dele); se o do VK não aparecer, o script desenha
@@ -5501,9 +5501,9 @@
         }
     }
 
-    // ---------- 4m) Notificações abrem na mesma aba ----------
-    // Um clique numa notificação marca o momento; se o VK abrir uma aba nova logo depois (window.open) para
-    // uma página do mesmo site, o script navega na aba atual. Links com target="_blank" também passam a abrir aqui.
+    // ---------- 4m) Controle de abertura de notificações ----------
+    // Quando NOTIFICATIONS_SAME_TAB está ativo, redireciona a abertura para a aba atual.
+    // Por padrão, a navegação nativa em nova aba é preservada.
     let notifClickAt = 0;
 
     document.addEventListener('click', e => {
