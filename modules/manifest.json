@@ -31,7 +31,7 @@
     },
     {
       "id": "announcements_content",
-      "version": "1.0.0",
+      "version": "2.6.0",
       "apiVersion": 1,
       "pages": [
         "topic"
@@ -41,7 +41,7 @@
     },
     {
       "id": "announcements",
-      "version": "1.0.0",
+      "version": "2.6.0",
       "apiVersion": 1,
       "pages": [
         "topic"
