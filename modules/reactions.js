@@ -1231,6 +1231,7 @@ SalvaVK.modules.register({
     }
 
     function rxNtAppendPhrase(target, reaction, many) {
+        target.style.fontWeight = '400';
         const id = Number(reaction && reaction.id);
         const emoji = rxNtReactionEmoji(reaction);
         const addText = value => target.appendChild(document.createTextNode(value));
@@ -1298,6 +1299,7 @@ SalvaVK.modules.register({
         const tn = anchor && anchor.nextSibling;
         if (!tn || tn.nodeType !== 3) return;   // o texto do verbo é o nó de texto logo depois do nome
         const wrap = document.createElement('span');
+        wrap.style.fontWeight = '400';
         wrap.setAttribute('data-ar-nt', '1');
         rxNtNodes(rs, tn.nodeValue).forEach(n => wrap.appendChild(n));
         tn.replaceWith(wrap);
@@ -1785,6 +1787,7 @@ SalvaVK.modules.register({
 
             const body = item.querySelector('[data-testid="notification-text"]');
             if (body) {
+                body.style.fontWeight = '400';
                 body.removeAttribute('data-ar-nt-hide');
                 body.textContent = '';
                 rxNtAppendPhrase(body, group.reaction, names.length > 1);
