@@ -295,7 +295,7 @@ SalvaVK.modules.register({
         return i < 0 ? RDC_YT_CHANNELS.length : i;
     };
 
-    // pega cada objeto de jogo do HTML (o que contém "home":"..."), em qualquer ordem de chaves
+    // pega cada objeto de jogo e herda a data do grupo "key" -> "games" da FutNaTV
     function rdcExtractGames(html) {
         const games = [], re = /"home"\s*:\s*"/g;
         let m;
@@ -311,16 +311,28 @@ SalvaVK.modules.register({
                 else if (c === '{') depth++;
                 else if (c === '}') { depth--; if (depth === 0) break; }
             }
-            if (depth !== 0 || j < k) continue;   // objeto aberto, ou que nem contém este "home"
+            if (depth !== 0 || j < k) continue;
             try {
                 const o = JSON.parse(html.slice(i, j + 1));
-                if (o && o.home) games.push(o);
+                if (o && o.home) {
+                    // A FutNaTV agrupa os jogos em objetos com "key":"AAAA-MM-DD" e "games":[...].
+                    // Se o jogo não tiver dateKey próprio, herda a data do grupo.
+                    const gamesPos = html.lastIndexOf('"games"', i);
+                    if (!(typeof o.dateKey === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.dateKey)) && gamesPos >= 0) {
+                        const groupStart = html.lastIndexOf('{', gamesPos);
+                        if (groupStart >= 0) {
+                            const header = html.slice(groupStart, gamesPos);
+                            const groupDate = header.match(/"key"\s*:\s*"(\d{4}-\d{2}-\d{2})"/);
+                            if (groupDate) o.dateKey = groupDate[1];
+                        }
+                    }
+                    games.push(o);
+                }
             } catch (e) { /* ignora */ }
             re.lastIndex = Math.max(re.lastIndex, j + 1);
         }
         return games;
     }
-
     // "21h00" (Brasília, hoje) -> milissegundos
     function rdcFutnatStart(timeStr) {
         const m = String(timeStr || '').match(/(\d{1,2})\s*[hH:]\s*(\d{2})?/);
