@@ -147,9 +147,6 @@
     const TOP_PIN_MARK_CHECK_MS = 16000;   // de quanto em quanto tempo relê o 1º post do tópico atrás da marca invisível do post fixado (o sondador roda mais vezes, mas esta leitura é mais espaçada)
     const TOP_START_ID_RETRY_MS = 600000;  // se a busca de um comentário por id (start_comment_id) falhar, o VK costuma falhar de novo: por este tempo vai direto pela posição do comentário, sem gastar a tentativa que falha
     const TOP_MARK_BY_USER = true;         // cada usuário pode MARCAR 1 post por tópico (ícone de marcador): fica guardado só neste navegador (nada é postado), tem prioridade no cartão de destaque e pode ser desmarcado a qualquer hora
-    const INTRO_POPUP = false;             // aviso automático de atualização agora é controlado pelo módulo independente; a ajuda do Post em destaque continua disponível no botão "?"
-    const INTRO_EVERY_UPDATE = false;      // false = só aparece nesta atualização (INTRO_ID) e NÃO reaparece nas próximas versões; true = reaparece a cada versão nova
-    const INTRO_ID = '1';                  // vale só com INTRO_EVERY_UPDATE = false
     const TOP_LIKED_COMPACT_MAX_H = 180;   // altura máxima (px) do cartão compacto, contando a faixa "Post em destaque"
     const TOP_LIKED_REFRESH_MS = 60000;    // de quanto em quanto tempo refaz a varredura (tópicos grandes esperam mais)
     const TOP_LIKED_PAUSE_MS = 700;        // pausa entre os lotes de 100 comentários da varredura (poupa o limite do VK)
@@ -6351,13 +6348,9 @@
     setInterval(() => { try { const r = reqReport(); log('Requisições no último minuto: ' + r.total + '\n   ' + r.rows.join('\n   ')); } catch (e) { /* ignora */ } }, 60000);
 
 
-    // ===== POPUP "POST EM DESTAQUE" (abre 1 vez, no 1º tópico aberto depois de instalar/atualizar) =====
-    // A marca "já visto" fica no GM storage (vale para todas as abas e para vk.ru/vk.com) e é gravada ao ABRIR, não ao fechar.
-    const INTRO_KEY = 'vk_ar_intro_seen';
-    const introValue = () => INTRO_EVERY_UPDATE ? SCRIPT_VERSION : 'id' + INTRO_ID;
-    const introGet = () => { try { const v = GM_getValue(INTRO_KEY, null); if (v != null) return String(v); } catch (e) { /* cai no localStorage */ } return LS.get(INTRO_KEY); };
-    const introSet = v => { try { GM_setValue(INTRO_KEY, v); } catch (e) { /* cai no localStorage */ } LS.set(INTRO_KEY, v); };
-    let introDone = false, introSince = 0, introOpen = false;
+    // ===== AJUDA DO POPUP "POST EM DESTAQUE" =====
+    // O conteúdo e o layout continuam disponíveis pelo botão "?" do cartão.
+    let introOpen = false;
 
     const INTRO_CSS = `
 .ari-wrap{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);animation:ari-fade .18s ease-out both}
@@ -6443,21 +6436,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         document.addEventListener('keydown', onKey, true);
         (document.body || document.documentElement).appendChild(wrap);
         try { btn.focus({ preventScroll: true }); } catch (e) { /* ignora */ }
-        log('Popup do post em destaque aberto (' + (fromHelp ? 'botão de ajuda' : introValue()) + ')');
+        log('Ajuda do post em destaque aberta pelo botão de ajuda');
     }
 
-    function introTick() {
-        if (!INTRO_POPUP || introDone || introOpen) return;
-        if (!document.body || !isTopic() || /challenge/i.test(location.pathname)) { introSince = 0; return; }
-        if (document.visibilityState !== 'visible' || !document.querySelector(LIST_SEL)) return;   // aba em segundo plano não gasta o aviso; espera a lista aparecer
-        if (!introSince) introSince = Date.now();
-        if (!document.querySelector('[data-ar-top]') && Date.now() - introSince < 8000) return;   // espera o cartão de destaque (até 8 s)
-        introDone = true;
-        if (introGet() === introValue()) return;   // já viu (nesta ou em outra aba)
-        introSet(introValue());
-        try { introShow(); } catch (e) { log('Erro no popup do post em destaque:', e); }
-    }
-    setInterval(() => { try { introTick(); } catch (e) { /* ignora */ } }, 1000);
 
     setTimeout(checkUpdate, 4000);
     setInterval(checkUpdate, UPDATE_CHECK_MS);
