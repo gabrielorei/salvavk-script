@@ -1580,16 +1580,31 @@ SalvaVK.modules.register({
         const timestampOf = item => {
             const ownTime = Number(item.getAttribute('data-ar-nt-own-time'));
             if (item.hasAttribute('data-ar-nt-own') && Number.isFinite(ownTime) && ownTime > 0) return ownTime;
+
+            // O VK inclui o timestamp Unix exato no final do data-testid:
+            // notification-item-s25_0_1794605741
+            const testid = item.getAttribute('data-testid') || '';
+            const idMatch = testid.match(/^notification-item-[a-z0-9]+_\\d+_(\\d+)$/i);
+            if (idMatch) {
+                const seconds = Number(idMatch[1]);
+                if (Number.isSafeInteger(seconds) && seconds > 0) return seconds * 1000;
+            }
+
             const timeEl = item.querySelector('[data-testid="notification-time"]');
             if (!timeEl) return NaN;
             const exact = timeEl.getAttribute('datetime') || timeEl.getAttribute('title');
-            if (exact) { const parsed = Date.parse(exact); if (Number.isFinite(parsed)) return parsed; }
+            if (exact) {
+                const parsed = Date.parse(exact);
+                if (Number.isFinite(parsed)) return parsed;
+            }
+
+            // Fallback apenas para formatos sem timestamp no identificador.
             const label = (timeEl.textContent || '').trim().toLocaleLowerCase('pt-BR');
             const now = Date.now();
             if (!label) return NaN;
             if (/^(agora|agora mesmo|há poucos segundos|menos de um minuto)/.test(label)) return now;
-            if (/\bontem\b/.test(label)) return now - 86400000;
-            const match = label.match(/(?:há\s*)?(\d+)\s*(semanas?|m[eê]ses?|anos?|segundos?|seg|minutos?|min|horas?|h|dias?|d|s)(?:\s+atr[aá]s)?/i);
+            if (/\\bontem\\b/.test(label)) return now - 86400000;
+            const match = label.match(/(?:há\\s*)?(\\d+)\\s*(semanas?|m[eê]ses?|anos?|segundos?|seg|minutos?|min|horas?|h|dias?|d|s)(?:\\s+atr[aá]s)?/i);
             if (!match) return NaN;
             const amount = Number(match[1]), unit = match[2].toLowerCase();
             const factors = {
