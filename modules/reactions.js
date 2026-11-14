@@ -1449,9 +1449,14 @@ SalvaVK.modules.register({
         const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
         if (sec < 60) return 'agora';
         if (sec < 3600) return 'há ' + Math.floor(sec / 60) + ' min';
-        if (sec < 86400) return 'há ' + Math.floor(sec / 3600) + ' h';
+        if (sec < 86400) {
+            const hours = Math.floor(sec / 3600);
+            return hours + (hours === 1 ? ' hora atrás' : ' horas atrás');
+        }
         const days = Math.floor(sec / 86400);
-        return 'há ' + days + (days === 1 ? ' dia' : ' dias');
+        if (days < 7) return days + (days === 1 ? ' dia atrás' : ' dias atrás');
+        const weeks = Math.floor(days / 7);
+        return weeks + (weeks === 1 ? ' semana atrás' : ' semanas atrás');
     }
 
     function rxNtOwnContainers() {
@@ -1685,7 +1690,7 @@ SalvaVK.modules.register({
                     source.setAttribute('role', 'img');
                     source.setAttribute('aria-label', 'Notificação gerada pelo Salva VK');
                     source.setAttribute('data-ar-nt-own-source', '1');
-                    source.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2.75h8l4 4v14.5H6z"/><path d="M14 2.75v4h4M9 12l-2 2 2 2M15 12l2 2-2 2M13.5 11l-3 6"/></svg>';
+                    source.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2.5h8.2L19 7.3v13.2a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-16A2 2 0 0 1 7 2.5h-1z"/><path fill="var(--vkui--color_background_content,#fff)" d="M14 3.8v3.8h3.8z"/><path d="m9.3 11.2-2 2.1 2 2.1m5.4-4.2 2 2.1-2 2.1m-1.2-5.1-2.1 6" fill="none" stroke="var(--vkui--color_background_content,#fff)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg>';
                     source.style.cssText += ';display:inline-flex;align-items:center;justify-content:center;flex:none;pointer-events:none;opacity:.72;';
                     menu.replaceWith(source);
                 }
