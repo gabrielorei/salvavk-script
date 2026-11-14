@@ -1555,7 +1555,6 @@
         if (tsp) tsp.textContent = fmtTime(item.date);
         if (String(item.id) === '7383934') {
             const d = Number(item.date);
-            log('DEBUG destaque render', { id: item.id, date: item.date, local: Number.isFinite(d) ? new Date(d * 1000).toString() : null, formatado: fmtTime(item.date), textoDOM: tsp && tsp.textContent });
         }
 
         // Curtidas: estado e contagem reais vindos da API (não os do comentário usado como molde)
@@ -3942,7 +3941,6 @@
         }
         if (key === '7383934') {
             const d = it && Number(it.date);
-            log('DEBUG destaque API', { id: key, date: it && it.date, local: Number.isFinite(d) ? new Date(d * 1000).toString() : null, utc: Number.isFinite(d) ? new Date(d * 1000).toISOString() : null, offset: topIdxMemo.get(key) });
         }
         if (authors && resp) Object.assign(authors, buildAuthors(resp));
         return it;
@@ -4555,10 +4553,8 @@
     async function topConfirmCachedBest(id, myKey) {
         try {
             const cachedDate = topState.best && topState.best.date;
-            if (String(id) === '7383934') log('DEBUG destaque cache antes da confirmação', { id, date: cachedDate, local: Number.isFinite(Number(cachedDate)) ? new Date(Number(cachedDate) * 1000).toString() : null });
             const authors = {};
             const confirmed = await topFetchById(id, authors);
-            if (String(id) === '7383934') log('DEBUG destaque confirmação recebida', { id, date: confirmed && confirmed.date, local: confirmed && Number.isFinite(Number(confirmed.date)) ? new Date(Number(confirmed.date) * 1000).toString() : null });
             if (topState.key !== myKey || !topState.best || String(topState.best.id) !== String(id)) return;
             if (!confirmed) {
                 log('Post em destaque: não consegui confirmar pelo cache o comentário', id);
