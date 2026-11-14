@@ -1450,7 +1450,7 @@ SalvaVK.modules.register({
         return 'há ' + days + (days === 1 ? ' dia' : ' dias');
     }
 
-    function rxNtOwnContainer() {
+    function rxNtOwnContainers() {
         const texts = [...document.querySelectorAll('[data-testid="notification-text"]')]
             .filter(t => !t.closest('[data-ar-nt-own]'));
         const candidates = texts.map(text => {
@@ -1470,7 +1470,15 @@ SalvaVK.modules.register({
             if (!host) return null;
             return { item, host };
         }).filter(Boolean);
-        return candidates[0] || null;
+
+        // O VK mantém a lista do painel lateral e a da página completa ao mesmo tempo.
+        // Renderizamos em cada host para manter ambas sincronizadas.
+        const seen = new Set();
+        return candidates.filter(candidate => {
+            if (seen.has(candidate.host)) return false;
+            seen.add(candidate.host);
+            return true;
+        });
     }
 
     // Busca pelo ID exato. O VK às vezes falha em start_comment_id; nesse caso,
@@ -1829,15 +1837,16 @@ SalvaVK.modules.register({
                 const users = [...new Set(rows.map(r => Number(r.user_id)).filter(Number.isSafeInteger))];
                 // Resolve os usuários em paralelo; não bloquear a inserção por consultas de perfil.
                 rxResolve(users, true).then(() => {
-                    const ready = rxNtOwnContainer();
-                    if (ready) rxNtOwnRender(ready.host, ready.item, rxNtOwnRows);
+                    rxNtOwnContainers().forEach(ready =>
+                        rxNtOwnRender(ready.host, ready.item, rxNtOwnRows)
+                    );
                 }).catch(() => {});
             }
 
             // A inserção visual nunca espera pelas consultas dos comentários.
-            const fresh = rxNtOwnContainer();
-            if (fresh && Date.now() - rxNtOwnRenderedAt >= 1200) {
-                rxNtOwnRender(fresh.host, fresh.item, rxNtOwnRows);
+            const fresh = rxNtOwnContainers();
+            if (fresh.length && Date.now() - rxNtOwnRenderedAt >= 1200) {
+                fresh.forEach(target => rxNtOwnRender(target.host, target.item, rxNtOwnRows));
                 rxNtOwnRenderedAt = Date.now();
             }
         } catch (e) {
