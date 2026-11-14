@@ -9258,7 +9258,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         const MANIFEST_URL = 'https://raw.githubusercontent.com/gabrielorei/salvavk-script/feature/modularizacao/modules/manifest.json';
         const CACHE_KEY = 'SalvaVK_ModuleSnapshot_v1';
         const MAX_MANIFEST_BYTES = 128 * 1024, MAX_MODULE_BYTES = 1536 * 1024;
-        let state = 'idle', lastError = null, loadedRelease = null, pending = null, sourceMode = null;
+        let state = 'idle', lastError = null, loadedRelease = null, loadedCount = 0, pending = null, sourceMode = null;
 
         function byteLength(value) { return new TextEncoder().encode(value).length; }
         async function digest(value) {
@@ -9347,6 +9347,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             return selected.length;
         }
         async function start(force = false) {
+            if (!force && state === 'ready') return Promise.resolve(Object.freeze({ state, release: loadedRelease, source: sourceMode, modules: loadedCount }));
             if (pending && !force) return pending;
             pending = (async () => {
                 state = 'loading'; lastError = null;
@@ -9363,6 +9364,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 const count = await executeSnapshot(snapshot);
                 if (mode === 'network') writeCache(snapshot);
                 loadedRelease = snapshot.manifest.release;
+                loadedCount = count;
                 sourceMode = mode;
                 state = 'ready';
                 return Object.freeze({ state, release: loadedRelease, source: sourceMode, modules: count });
