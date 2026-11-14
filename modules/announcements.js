@@ -37,7 +37,7 @@ html[data-ar-dark] .svka-box{--svka-bg:var(--vkui--color_background_modal,#23232
 .svka-bar{display:flex;align-items:center;gap:.25em;width:fit-content;margin:.7em 0 0 auto;padding:.15em .6em;border-radius:2em;font-size:.98em;line-height:1;background:var(--svka-bg);box-shadow:0 .15em .7em rgba(0,0,0,.12)}
 .svka-bar span{display:block;padding:.3em;border-radius:.6em}
 .svka-bar span.on{font-size:1.2em;background:color-mix(in srgb,var(--svka-fg) 5%,transparent)}
-.svka-fill{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;padding:.3em 0;opacity:.17;filter:grayscale(.5);pointer-events:none;user-select:none;-webkit-mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent)}
+.svka-fill{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;padding:.3em 0;opacity:.10;filter:grayscale(.5);pointer-events:none;user-select:none;-webkit-mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent)}
 .svka-fill>div{display:flex;line-height:1}
 .svka-fill>.a{padding:0 12.5%}
 .svka-fill>.a span{flex:0 0 33.333%}
