@@ -1573,6 +1573,58 @@ SalvaVK.modules.register({
         return pending;
     }
 
+    // Ordena blocos completos da lista, mesmo quando o item está aninhado em um wrapper.
+    // O horário próprio vem do timestamp D1; o nativo é interpretado do rótulo do VK.
+    function rxNtOwnSort(host) {
+        if (!host || !host.isConnected) return;
+        const timestampOf = item => {
+            const ownTime = Number(item.getAttribute('data-ar-nt-own-time'));
+            if (item.hasAttribute('data-ar-nt-own') && Number.isFinite(ownTime) && ownTime > 0) return ownTime;
+            const timeEl = item.querySelector('[data-testid="notification-time"]');
+            if (!timeEl) return NaN;
+            const exact = timeEl.getAttribute('datetime') || timeEl.getAttribute('title');
+            if (exact) { const parsed = Date.parse(exact); if (Number.isFinite(parsed)) return parsed; }
+            const label = (timeEl.textContent || '').trim().toLocaleLowerCase('pt-BR');
+            const now = Date.now();
+            if (!label) return NaN;
+            if (/^(agora|agora mesmo|há poucos segundos|menos de um minuto)/.test(label)) return now;
+            if (/\bontem\b/.test(label)) return now - 86400000;
+            const match = label.match(/(?:há\s*)?(\d+)\s*(s|seg(?:undo)?s?|min(?:uto)?s?|h|hora?s?|d|dia?s?|semana?s?|m[eê]s(?:es)?|ano?s?)(?:\s+atr[aá]s)?/i);
+            if (!match) return NaN;
+            const amount = Number(match[1]), unit = match[2].toLowerCase();
+            const factors = {
+                s: 1000, seg: 1000, segundo: 1000, segundos: 1000,
+                min: 60000, minuto: 60000, minutos: 60000,
+                h: 3600000, hora: 3600000, horas: 3600000,
+                d: 86400000, dia: 86400000, dias: 86400000,
+                semana: 604800000, semanas: 604800000,
+                mês: 2592000000, meses: 2592000000,
+                ano: 31536000000, anos: 31536000000
+            };
+            return factors[unit] ? now - amount * factors[unit] : NaN;
+        };
+        const blocks = [...host.children].map((block, index) => {
+            const items = [...block.querySelectorAll('[data-testid^="notification-item-"]')];
+            if (block.matches && block.matches('[data-testid^="notification-item-"]')) items.unshift(block);
+            const times = items.map(timestampOf).filter(Number.isFinite);
+            return { block, index, time: times.length ? Math.max(...times) : NaN, valid: items.length > 0 };
+        }).filter(entry => entry.valid);
+        if (blocks.length < 2) return;
+        const ordered = blocks.slice().sort((a, b) => {
+            const av = Number.isFinite(a.time), bv = Number.isFinite(b.time);
+            if (av && bv) return (b.time - a.time) || (a.index - b.index);
+            if (av !== bv) return av ? -1 : 1;
+            return a.index - b.index;
+        });
+        if (ordered.every((entry, i) => entry.block === blocks[i].block)) return;
+        const marker = document.createComment('salvavk-notification-order');
+        host.insertBefore(marker, blocks[0].block);
+        const fragment = document.createDocumentFragment();
+        ordered.forEach(entry => fragment.appendChild(entry.block));
+        host.insertBefore(fragment, marker);
+        marker.remove();
+    }
+
     function rxNtOwnRender(host, template, rows) {
         const grouped = new Map(), wanted = new Set(), previews = [];
         rows.forEach(r => {
@@ -1636,6 +1688,7 @@ SalvaVK.modules.register({
             const time = item.querySelector('[data-testid="notification-time"]');
             if (time) time.textContent = rxNtOwnTime(group.rows.reduce((latest, r) =>
                 Date.parse(r.t || 0) > Date.parse(latest.t || 0) ? r : latest, group.rows[0]).t);
+            item.setAttribute('data-ar-nt-own-time', String(group.time || 0));
 
             const body = item.querySelector('[data-testid="notification-text"]');
             if (body) {
@@ -1739,54 +1792,8 @@ SalvaVK.modules.register({
             if (!wanted.has(key)) wrapper.remove();
         });
 
-        // Intercala avisos próprios e nativos pela data mais recente de cada agrupamento.
-        const ownTimes = new Map([...grouped.values()].map(group => [group.key, group.time]));
-        const notificationGroups = [...host.children].filter(group =>
-            group.querySelector && group.querySelector('[data-testid^="notification-item-"]'));
-        const timestampOf = item => {
-            const ownKey = item.getAttribute('data-ar-nt-own');
-            if (ownKey && ownTimes.has(ownKey)) return ownTimes.get(ownKey);
-
-            const label = (item.querySelector('[data-testid="notification-time"]')?.textContent || '')
-                .trim().toLocaleLowerCase('pt-BR');
-            const now = Date.now();
-            if (!label) return NaN;
-            if (/^(agora|agora mesmo|há poucos segundos|menos de um minuto)/.test(label)) return now;
-            if (/\bontem\b/.test(label)) return now - 24 * 60 * 60 * 1000;
-            const match = label.match(/(?:há\s*)?(\d+)\s*(s|seg(?:undo)?s?|min(?:uto)?s?|h|hora?s?|d|dia?s?|semana?s?|m[eê]s(?:es)?|ano?s?)(?:\s+atr[aá]s)?/i);
-            if (!match) return NaN;
-            const amount = Number(match[1]), unit = match[2].toLowerCase();
-            const factors = {
-                s: 1000, seg: 1000, segundo: 1000, segundos: 1000,
-                min: 60000, minuto: 60000, minutos: 60000,
-                h: 3600000, hora: 3600000, horas: 3600000,
-                d: 86400000, dia: 86400000, dias: 86400000,
-                semana: 604800000, semanas: 604800000,
-                mês: 2592000000, meses: 2592000000,
-                ano: 31536000000, anos: 31536000000
-            };
-            return factors[unit] ? now - amount * factors[unit] : NaN;
-        };
-        const orderedGroups = notificationGroups
-            .map((wrapper, index) => {
-                const times = [...wrapper.querySelectorAll('[data-testid^="notification-item-"]')]
-                    .map(timestampOf).filter(Number.isFinite);
-                return { wrapper, index, time: times.length ? Math.max(...times) : NaN };
-            })
-            .sort((a, b) => {
-                const av = Number.isFinite(a.time), bv = Number.isFinite(b.time);
-                if (av && bv) return (b.time - a.time) || (a.index - b.index);
-                if (av !== bv) return av ? -1 : 1;
-                return a.index - b.index;
-            });
-        if (orderedGroups.length > 1) {
-            const marker = document.createComment('salvavk-notification-order');
-            host.insertBefore(marker, orderedGroups[0].wrapper);
-            const fragment = document.createDocumentFragment();
-            orderedGroups.forEach(entry => fragment.appendChild(entry.wrapper));
-            host.insertBefore(fragment, marker);
-            marker.remove();
-        }
+        // Ordena imediatamente após atualizar os itens próprios.
+        rxNtOwnSort(host);
 
         // Busca uma única prévia por agrupamento; no máximo quatro chamadas VK simultâneas.
         let next = 0;
@@ -1845,6 +1852,8 @@ SalvaVK.modules.register({
 
             // A inserção visual nunca espera pelas consultas dos comentários.
             const fresh = rxNtOwnContainers();
+            // O VK pode reordenar a lista ao atualizar; reaplicamos a ordem em cada ciclo.
+            fresh.forEach(target => rxNtOwnSort(target.host));
             if (fresh.length && Date.now() - rxNtOwnRenderedAt >= 1200) {
                 fresh.forEach(target => rxNtOwnRender(target.host, target.item, rxNtOwnRows));
                 rxNtOwnRenderedAt = Date.now();
