@@ -1256,7 +1256,7 @@ SalvaVK.modules.register({
     }
 
     function rxNtNodes(rs, orig, size) {
-        const got = rs.filter(Boolean), uniq = [...new Set(got)], sz = size || 16;
+        const got = rs.filter(Boolean), uniq = [...new Map(got.map(r => [Number(r.id), r])).values()], sz = size || 16;
         const T = s => document.createTextNode(s);
         if (got.length === rs.length && uniq.length === 1) {
             const out = [], many = rs.length > 1;
