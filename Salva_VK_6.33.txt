@@ -8935,42 +8935,43 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                         else img.removeAttribute('src');
                     }
                 } else {
-                    const avatarTemplate = avatar.cloneNode(true);
+                    // Replica a estrutura nativa VK AvatarStack (notification-additional-avatar).
+                    // O VK controla a sobreposição pelo componente e suas classes, não por anchors absolutos.
+                    const sourceAvatar = avatar.cloneNode(true);
                     avatarHost.querySelectorAll('a[data-testid="notification-avatar"], a[data-ar-nt-own-avatar]')
                         .forEach(n => n.remove());
-                    avatarHost.style.position = 'relative';
-                    avatarHost.style.width = '48px';
-                    avatarHost.style.height = '48px';
-                    avatarHost.style.flex = '0 0 48px';
+
+                    const stack = document.createElement('div');
+                    stack.className = 'vkit-sCIJBQ vkit-X4aorD vkit-uQqhAT vkuiInternalTappable GQPZ8m _0kJL6j _6iiopx KZD2Fo ZjZOwx';
+                    stack.style.setProperty('--vkui_internal--avatarstack_size', '48px');
+                    stack.style.setProperty('--vkui_internal--avatarstack_avatar_size', '36px');
+                    stack.style.width = '48px';
+                    stack.style.height = '48px';
+                    stack.setAttribute('data-testid', 'notification-additional-avatar');
 
                     const shown = actors.slice(0, 3);
-                    const positions = shown.length === 2
-                        ? [[0, 0, 32], [16, 16, 32]]
-                        : [[0, 0, 28], [20, 0, 28], [10, 20, 28]];
-                    shown.forEach((actor, index) => {
-                        const a = avatarTemplate.cloneNode(true);
-                        a.setAttribute('data-ar-nt-own-avatar', '1');
-                        a.setAttribute('data-testid', index === 0 ? 'notification-avatar' : 'notification-avatar-group');
-                        a.href = actor.user.href;
-                        const img = a.querySelector('img');
+                    shown.forEach(actor => {
+                        const face = document.createElement('div');
+                        face.className = 'meXqZJ JXVtku SEJNrr KZD2Fo ZjZOwx';
+                        face.style.width = '36px';
+                        face.style.height = '36px';
+
+                        const img = sourceAvatar.querySelector('img');
                         if (img) {
-                            img.alt = actor.user.name;
-                            if (actor.user.photo) img.src = actor.user.photo;
-                            else img.removeAttribute('src');
+                            const picture = img.cloneNode(false);
+                            picture.alt = actor.user.name;
+                            picture.width = 36;
+                            picture.height = 36;
+                            if (actor.user.photo) picture.src = actor.user.photo;
+                            else picture.removeAttribute('src');
+                            face.appendChild(picture);
                         }
-                        const [left, top, size] = positions[index];
-                        a.style.position = 'absolute';
-                        a.style.left = left + 'px';
-                        a.style.top = top + 'px';
-                        a.style.width = size + 'px';
-                        a.style.height = size + 'px';
-                        a.style.zIndex = String(index + 1);
-                        a.style.borderRadius = '50%';
-                        a.style.overflow = 'hidden';
-                        a.style.boxSizing = 'border-box';
-                        a.style.border = '2px solid var(--vkui--color_background_content,#fff)';
-                        avatarHost.appendChild(a);
+
+                        const decoration = sourceAvatar.querySelector('[aria-hidden="true"].xwZAqX');
+                        if (decoration) face.appendChild(decoration.cloneNode(true));
+                        stack.appendChild(face);
                     });
+                    avatarHost.appendChild(stack);
                 }
 
                 const badge = document.createElement('span');
