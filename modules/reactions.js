@@ -1682,16 +1682,17 @@ SalvaVK.modules.register({
                 oldLink.setAttribute('data-ar-nt-own-link', '1');
                 const menu = item.querySelector('[data-testid="notification-menu"]');
                 if (menu) {
-                    // Mantém o espaço/posicionamento do menu nativo, mas identifica a origem
-                    // sem simular um botão de opções que esta notificação não possui.
+                    // Reproduz os três pontos nativos como indicador visual, sem ação de botão.
                     const source = document.createElement('span');
                     source.className = menu.className || '';
                     source.style.cssText = menu.style.cssText || '';
+                    const dots = menu.querySelector('svg');
+                    if (dots) source.appendChild(dots.cloneNode(true));
                     source.setAttribute('role', 'img');
-                    source.setAttribute('aria-label', 'Notificação gerada pelo Salva VK');
+                    source.setAttribute('aria-label', 'Notificação gerada pelo script (reações negativas não contam como curtida no VK)');
+                    source.setAttribute('title', 'Notificação gerada pelo script (reações negativas não contam como curtida no VK)');
                     source.setAttribute('data-ar-nt-own-source', '1');
-                    source.textContent = '</>';
-                    source.style.cssText += ';display:inline-flex;align-items:center;justify-content:center;flex:none;pointer-events:none;opacity:.72;';
+                    source.style.cssText += ';display:inline-flex;align-items:center;justify-content:center;flex:none;pointer-events:auto;cursor:help;';
                     menu.replaceWith(source);
                 }
                 item.querySelectorAll('[data-ar-nt-list], .ar-nt-bd').forEach(n => n.remove());
