@@ -1,0 +1,46 @@
+name: Atualizar manifesto dos módulos
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/modularizacao
+    paths:
+      - 'modules/*.js'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: modules-manifest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Calcular hashes e atualizar URLs
+        run: node scripts/update-manifest.js "${GITHUB_SHA}"
+
+      - name: Salvar manifesto atualizado
+        run: |
+          if git diff --quiet -- modules/manifest.json; then
+            echo "Manifesto já está atualizado."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add modules/manifest.json
+          git commit -m "chore: atualizar hashes do manifesto"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
