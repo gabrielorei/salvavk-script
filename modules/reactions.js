@@ -1133,7 +1133,11 @@ SalvaVK.modules.register({
             }
             rxNtCursor = since;
             if (n || reset) rxNtMirrorSave();
-            if (n) rxNtSched();
+            if (n) {
+                // O espelho mudou: invalida a lista preparada para reconstruí-la já, sem nova consulta ao D1.
+                rxNtOwnAt = 0;
+                rxNtSched();
+            }
             if (n) rxLog('Espelho das reações: +' + n + ' linha(s)');
         } catch (e) {
             rxLog('Espelho das reações: erro:', e && e.message);
