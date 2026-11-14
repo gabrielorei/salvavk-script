@@ -157,7 +157,7 @@ SalvaVK.modules.register({
         '[data-testid="comment-like"] span *{color:inherit !important}',
         // janela de notificações
         '[data-ar-nt-hide]{display:none !important}[data-ar-nt-host]{position:relative}',
-        '.ar-nt-bd{position:absolute;right:-6px;bottom:-6px;width:26px;height:26px;border:1px solid rgba(128,128,128,.18);box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
+        '.ar-nt-bd{position:absolute;right:-7px;bottom:-7px;width:28px;height:28px;border:1.5px solid rgba(128,128,128,.26);box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
             'background:var(--vkui--color_background_content,#fff);box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff);pointer-events:none}'
     ].join(''), 'vk-arx-css');
 
@@ -1823,7 +1823,7 @@ SalvaVK.modules.register({
                 const badge = document.createElement('span');
                 badge.className = 'ar-nt-bd';
                 badge.setAttribute('data-sig', key + '-' + group.emoji);
-                badge.appendChild(rxIcon(group.reaction, 20));
+                badge.appendChild(rxIcon(group.reaction, 22));
                 avatarHost.appendChild(badge);
             }
         });
