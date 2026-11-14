@@ -1208,6 +1208,7 @@ SalvaVK.modules.register({
     //  - todos reagiram e com a mesma: "reagiu com [ícone] ao seu comentário"
     //  - todos reagiram, reações diferentes: "reagiram ao seu comentário [ícones]"
     //  - só alguns reagiram: mantém o texto original e acrescenta os ícones
+    // Texto das reações nas notificações próprias.
     function rxNtReactionPhrase(r, many) {
         const id = Number(r && r.id);
         const emoji = r && r.fb ? ' ' + r.fb : '';
