@@ -1589,7 +1589,7 @@ SalvaVK.modules.register({
             if (!label) return NaN;
             if (/^(agora|agora mesmo|há poucos segundos|menos de um minuto)/.test(label)) return now;
             if (/\bontem\b/.test(label)) return now - 86400000;
-            const match = label.match(/(?:há\s*)?(\d+)\s*(s|seg(?:undo)?s?|min(?:uto)?s?|h|hora?s?|d|dia?s?|semana?s?|m[eê]s(?:es)?|ano?s?)(?:\s+atr[aá]s)?/i);
+            const match = label.match(/(?:há\s*)?(\d+)\s*(semanas?|m[eê]ses?|anos?|segundos?|seg|minutos?|min|horas?|h|dias?|d|s)(?:\s+atr[aá]s)?/i);
             if (!match) return NaN;
             const amount = Number(match[1]), unit = match[2].toLowerCase();
             const factors = {
