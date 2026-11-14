@@ -147,7 +147,7 @@
     const TOP_PIN_MARK_CHECK_MS = 16000;   // de quanto em quanto tempo relê o 1º post do tópico atrás da marca invisível do post fixado (o sondador roda mais vezes, mas esta leitura é mais espaçada)
     const TOP_START_ID_RETRY_MS = 600000;  // se a busca de um comentário por id (start_comment_id) falhar, o VK costuma falhar de novo: por este tempo vai direto pela posição do comentário, sem gastar a tentativa que falha
     const TOP_MARK_BY_USER = true;         // cada usuário pode MARCAR 1 post por tópico (ícone de marcador): fica guardado só neste navegador (nada é postado), tem prioridade no cartão de destaque e pode ser desmarcado a qualquer hora
-    const INTRO_POPUP = true;              // popup de boas-vindas explicando novas atualizações: abre 1 vez, no 1º tópico aberto depois de instalar/atualizar; false = nunca abre
+    const INTRO_POPUP = false;             // aviso automático de atualização agora é controlado pelo módulo independente; a ajuda do Post em destaque continua disponível no botão "?"
     const INTRO_EVERY_UPDATE = false;      // false = só aparece nesta atualização (INTRO_ID) e NÃO reaparece nas próximas versões; true = reaparece a cada versão nova
     const INTRO_ID = '1';                  // vale só com INTRO_EVERY_UPDATE = false
     const TOP_LIKED_COMPACT_MAX_H = 180;   // altura máxima (px) do cartão compacto, contando a faixa "Post em destaque"
