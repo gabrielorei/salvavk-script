@@ -1801,6 +1801,9 @@ SalvaVK.modules.register({
             if (preview) {
                 const commentKey = String(group.topic) + ':' + String(group.comment_id);
                 preview.textContent = rxNtOwnFormatPreview(rxNtOwnComments.get(commentKey) || 'Carregando comentário…');
+                // Usa a mesma cor do texto da reação, respeitando o tema atual do VK.
+                const reactionText = item.querySelector('[data-testid="notification-text"]');
+                if (reactionText) preview.style.color = getComputedStyle(reactionText).color;
                 previews.push({ row: group.rows[0], item, preview, commentKey });
             }
 
