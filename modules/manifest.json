@@ -7,8 +7,8 @@
       "id": "reactions",
       "version": "1.0.0",
       "apiVersion": 1,
-      "sha256": "f4c37daf6651273c15de471819929a0239102e821dc9da20c0e0fecf735f460c",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/reactions.js?ref=a4ac0f9dd8c6ee535b4cad2a5bcc454a5cea5ead",
+      "sha256": "a8a1119530134903d5690885e8fc37b4965f1c3d2c61d3d38c8649268b7352ff",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/reactions.js?ref=7e930cf7d467d1e6c0c9442f525a5a5a175431c0",
       "pages": [
         "topic",
         "notifications",
@@ -21,7 +21,7 @@
       "version": "1.0.0",
       "apiVersion": 1,
       "sha256": "f50c792003e7d98a963c9a5e42e708644157ec82eb9dc8cf281e7adc7ad555cc",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/games.js?ref=a4ac0f9dd8c6ee535b4cad2a5bcc454a5cea5ead",
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/games.js?ref=7e930cf7d467d1e6c0c9442f525a5a5a175431c0",
       "pages": [
         "topic",
         "notifications",
@@ -37,7 +37,7 @@
         "topic"
       ],
       "sha256": "dfe037354075d96829c2c5b7c36b79bb00ff923218a103a5ddc3c4ff584d8e89",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements_content.js?ref=a4ac0f9dd8c6ee535b4cad2a5bcc454a5cea5ead"
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements_content.js?ref=7e930cf7d467d1e6c0c9442f525a5a5a175431c0"
     },
     {
       "id": "announcements",
@@ -47,7 +47,7 @@
         "topic"
       ],
       "sha256": "28e5da5506a0ec810014f18eb087b6ebdb8336fdf789e8918e565b034ebf6f99",
-      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements.js?ref=a4ac0f9dd8c6ee535b4cad2a5bcc454a5cea5ead"
+      "url": "https://salva-vk-api.salvavk.workers.dev/modules/announcements.js?ref=7e930cf7d467d1e6c0c9442f525a5a5a175431c0"
     }
   ]
 }
