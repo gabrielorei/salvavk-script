@@ -11,6 +11,13 @@ const ID_RE = /^[1-9]\d*$/;
 const TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const NEXT_TIMESTAMP_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ', max(julianday('now'), COALESCE(julianday((SELECT MAX(updated_at) FROM reactions)), 0) + 0.00000002))";
 
+// Cache em memória do isolate para os módulos: evita uma chamada à API do GitHub a cada carregamento de página.
+// (A Cache API da borda não funciona em *.workers.dev, por isso o cache é em memória.)
+const MODULE_MEMORY = new Map();
+const MODULE_TTL_IMMUTABLE_MS = 60 * 60 * 1000;   // ref = SHA de commit: conteúdo não muda
+const MODULE_TTL_MUTABLE_MS = 60 * 1000;          // ref = branch (inclui o manifesto sem ref)
+const MODULE_MEMORY_MAX = 24;
+
 function response(body, status = 200, type = "application/json") {
   return new Response(body, { status, headers: { ...cors, "Content-Type": type, "Cache-Control": "no-store" } });
 }
@@ -67,6 +74,21 @@ export default {
       if (!ref || !(ref === "feature/modularizacao" || /^[a-f0-9]{40}$/i.test(ref))) {
         return json({ error: "Referência do módulo inválida" }, 400);
       }
+      const immutable = /^[a-f0-9]{40}$/i.test(ref);
+      const memKey = file + "@" + ref.toLowerCase();
+      const cacheControl = file === "manifest.json" ? "no-store"
+        : (immutable ? "public, max-age=31536000, immutable" : "public, max-age=60");
+      const moduleResponse = body => new Response(body, {
+        status: 200,
+        headers: {
+          ...cors,
+          "Content-Type": file === "manifest.json" ? "application/json; charset=utf-8" : "text/javascript; charset=utf-8",
+          "Cache-Control": cacheControl,
+          "X-Content-Type-Options": "nosniff"
+        }
+      });
+      const hit = MODULE_MEMORY.get(memKey);
+      if (hit && hit.expires > Date.now()) return moduleResponse(hit.body);
       const githubUrl = "https://api.github.com/repos/gabrielorei/salvavk-script/contents/modules/" +
         encodeURIComponent(file) + "?ref=" + encodeURIComponent(ref);
       const upstream = await fetch(githubUrl, {
@@ -81,15 +103,11 @@ export default {
         console.error("Distribuição GitHub:", upstream.status, await upstream.text());
         return json({ error: "Não foi possível obter o arquivo de módulo" }, upstream.status === 404 ? 404 : 502);
       }
-      return new Response(await upstream.arrayBuffer(), {
-        status: 200,
-        headers: {
-          ...cors,
-          "Content-Type": file === "manifest.json" ? "application/json; charset=utf-8" : "text/javascript; charset=utf-8",
-          "Cache-Control": file === "manifest.json" ? "no-store" : "public, max-age=300",
-          "X-Content-Type-Options": "nosniff"
-        }
-      });
+      const body = await upstream.arrayBuffer();
+      MODULE_MEMORY.delete(memKey);
+      MODULE_MEMORY.set(memKey, { body, expires: Date.now() + (immutable ? MODULE_TTL_IMMUTABLE_MS : MODULE_TTL_MUTABLE_MS) });
+      while (MODULE_MEMORY.size > MODULE_MEMORY_MAX) MODULE_MEMORY.delete(MODULE_MEMORY.keys().next().value);
+      return moduleResponse(body);
     }
 
     try {
