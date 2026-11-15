@@ -164,7 +164,7 @@ SalvaVK.modules.register({
         '.ar-nt-bd{position:absolute;right:-5px;bottom:-5px;width:28px;height:28px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
             'background:var(--vkui--color_background_content,#fff);border:1px solid rgba(128,128,128,.28);' +
             'box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 2px 5px rgba(0,0,0,.16);pointer-events:none}',
-        '.ar-nt-chip{white-space:nowrap}',
+        '.ar-nt-chip{display:inline-flex;align-items:center;gap:4px;vertical-align:-5px;white-space:nowrap;line-height:20px}',
         '.ar-nt-chip b{font-weight:600;color:var(--vkui--color_text_accent,#2a5885)}',
         'html[data-ar-dark] .ar-nt-chip b{color:#a6d0ff}',
     ].join(''), 'vk-arx-css');
@@ -1232,13 +1232,9 @@ SalvaVK.modules.register({
     function rxNtChip(r) {
         const chip = document.createElement('span');
         chip.className = 'ar-nt-chip';
-        const ic = rxIcon(r, 20);
-        ic.style.display = 'inline-block';
-        ic.style.verticalAlign = '-5px';
-        ic.style.marginRight = '4px';
         const name = document.createElement('b');
         name.textContent = r.name.toLocaleLowerCase('pt-BR');
-        chip.append(ic, name);
+        chip.append(rxIcon(r, 20), name);
         return chip;
     }
 
