@@ -14,7 +14,7 @@ SalvaVK.modules.register({
         const idOf = api.ui.commentId.idOf, numId = api.ui.commentId.numId;
         const LIKE_COUNT_COLOR = api.ui.colors.likeCount;
         const HEART_OUTLINE = api.ui.colors.heartOutline, LIKE_GRAY = api.ui.colors.likeGray;
-        const DEBUG = false;
+        const DEBUG = true;
 
     'use strict';
     // Com @grant, "window" é uma cópia isolada: o gancho de fetch/XHR precisa ir para a janela REAL da página
@@ -24,11 +24,11 @@ SalvaVK.modules.register({
     const RX_FONT_PX = 13;          // tamanho dos números
     const RX_NO_HEART_TIP = true;   // o coração só abre o seletor de reações (sem o balão "X pessoas avaliaram")
     const RX_URL = 'https://salva-vk-api.salvavk.workers.dev/';
-    const RX_STEPS = [5000, 10000, 20000, 30000, 60000];   // intervalos da leitura (ms): sobe um degrau a cada RX_STEP_AFTER leituras iguais
+    const RX_STEPS = [5000, 15000, 30000, 60000, 120000, 180000];   // intervalos da leitura (ms): sobe um degrau a cada RX_STEP_AFTER leituras iguais
     const RX_STEP_AFTER = 2;
     const RX_CHANGE_STEP = 1;       // degrau para onde a leitura volta quando OUTRAS pessoas mudam algo (0 = volta a 5 s, como na v6.33). Ação sua e troca de página sempre voltam a 5 s
     const RX_IDLE_AFTER_MS = 2 * 60 * 1000;   // sem mouse/teclado/rolagem/toque por esse tempo = aba parada (ociosa)
-    const RX_IDLE_POLL_MS = 60000;  // aba parada: a leitura nunca fica mais frequente que isso; ao voltar a mexer, lê na hora
+    const RX_IDLE_POLL_MS = 180000;  // aba parada: a leitura nunca fica mais frequente que isso; ao voltar a mexer, lê na hora
     const RX_MIN_GAP_MS = 2000;     // intervalo mínimo entre duas leituras, mesmo as forçadas
     const RX_FULL_EVERY_MS = 10 * 60 * 1000;   // leitura completa de tempos em tempos (corrige deriva)
     const RX_HIDDEN_POLL_MS = 0;    // aba escondida: 0 = não lê (lê na hora ao voltar); ou um intervalo em ms
@@ -42,6 +42,9 @@ SalvaVK.modules.register({
     const RX_NT_MIRROR_EVERY_MS = 120000;       // atualização do espelho (só o que mudou); 0 = desliga
     const RX_NT_MIRROR_LIST_MS = 30000;         // idem, com a janela de notificações aberta
     const RX_NT_MIRROR_IDLE_MS = 300000;        // idem, com a aba parada (ociosa)
+    const RX_NAV_SETTLE_MS = 1500;           // troca de página: espera a navegação estabilizar antes de ler
+    const RX_PAGE_CACHE_MS = 10 * 60 * 1000; // validade do cache por página (igual ao RX_FULL_EVERY_MS)
+    const RX_PAGE_CACHE_MAX = 8;             // páginas guardadas por tópico
     const RX_NT = { title: 'Alguém Reagiu ao Seu Comentário', verbOne: 'reagiu', verbMany: 'reagiram', with: 'com', tail: 'ao seu comentário' };
     const RX_NT_LIKE_RE = /(curti|like|оцени|понрав)[\s\S]*?(coment|comment|комментар)/i;   // "curtiu seu comentário" (pt, en, ru)
     // ========================
@@ -189,7 +192,7 @@ SalvaVK.modules.register({
 
     // rows: comentário -> { idDaReação: quantidade }; mine: comentário -> id da SUA reação; local: o que você acabou de clicar
     // store: linhas do servidor (chave "comentário:usuário"); cursor: updated_at da última linha recebida (base do delta); fullAt: hora da última leitura completa
-    const rx = { topic: null, rows: new Map(), mine: new Map(), local: new Map(), who: new Map(), raw: [], digest: '', step: 0, same: 0, last: 0, sentLo: undefined, sentHi: undefined, sentFx: '', force: false, meMissing: false, busy: false, acting: new Set(), self: false, store: new Map(), cursor: null, fullAt: 0, firstId: null, firstTry: 0 };
+    const rx = { topic: null, rows: new Map(), mine: new Map(), local: new Map(), who: new Map(), raw: [], digest: '', step: 0, same: 0, last: 0, sentLo: undefined, sentHi: undefined, sentFx: '', force: false, meMissing: false, busy: false, acting: new Set(), self: false, store: new Map(), cursor: null, fullAt: 0, firstId: null, firstTry: 0, pages: new Map(), navKey: '', navSince: 0, storeKey: null, storeHi: null };
     const RX_SHARE_KEY = 'vk_arx_shared';
 
     function rxIcon(r, size) {
@@ -480,33 +483,78 @@ SalvaVK.modules.register({
         } catch (e) { rxLog('Não consegui descobrir o 1º post do tópico:', e && e.message); }
     }
 
+    // Guarda as reações da janela que está na tela (só se o store pertence a ela)
+    function rxPageSave() {
+        if (!rx.storeKey || rx.cursor == null) return;
+        rx.pages.delete(rx.storeKey);   // reinsere no fim: o mais antigo sai primeiro
+        rx.pages.set(rx.storeKey, { store: rx.store, cursor: rx.cursor, fullAt: rx.fullAt, hi: rx.storeHi });
+        while (rx.pages.size > RX_PAGE_CACHE_MAX) rx.pages.delete(rx.pages.keys().next().value);
+    }
+    
+    // Janela já vista há pouco: desenha na hora e agenda só um delta (sem leitura completa)
+    function rxPageRestore(want, winKey, fxKey) {
+        const e = rx.pages.get(winKey);
+        if (!e) return false;
+        if (Date.now() - e.fullAt > RX_PAGE_CACHE_MS || (want.hi || 0) > (e.hi || 0)) {   // vencido, ou a faixa cresceu
+            rx.pages.delete(winKey);
+            return false;
+        }
+        rx.store = new Map(e.store);
+        rx.cursor = e.cursor;
+        rx.fullAt = e.fullAt;
+        rx.storeKey = winKey;
+        rx.storeHi = want.hi;
+        rx.sentLo = want.lo; rx.sentHi = want.hi; rx.sentFx = fxKey;
+        rx.force = true;
+        rxIngest(rxStoreRows());   // desenha o que estava guardado
+        rx.step = 0; rx.same = 0;
+        rx.last = Date.now() - RX_STEPS[0] + RX_NAV_SETTLE_MS;   // o delta sai depois de estabilizar
+        rxLog('Cache de página: ' + winKey + ' restaurada (' + rx.store.size + ' linhas); delta em ~' + RX_NAV_SETTLE_MS / 1000 + ' s');
+        return true;
+    }
+
     async function rxPoll() {
         if (rx.busy || !isTopic()) return;
         if (document.hidden && !RX_HIDDEN_POLL_MS) return;
         const key = topicKey();
         if (!key) return;
         if (rx.topic !== key) {
-            Object.assign(rx, { topic: key, rows: new Map(), mine: new Map(), local: new Map(), who: new Map(), raw: [], digest: '', step: 0, same: 0, last: 0, sentLo: undefined, sentHi: undefined, sentFx: '', force: false, store: new Map(), cursor: null, fullAt: 0, firstId: null, firstTry: 0 });
+            Object.assign(rx, { topic: key, rows: new Map(), mine: new Map(), local: new Map(), who: new Map(), raw: [], digest: '', step: 0, same: 0, last: 0, sentLo: undefined, sentHi: undefined, sentFx: '', force: false, store: new Map(), cursor: null, fullAt: 0, firstId: null, firstTry: 0, pages: new Map(), navKey: '', navSince: 0, storeKey: null, storeHi: null });
         }
         rxLoadFirstId(key);
         if (meId == null || !meFresh) learnMeApi();
-        if (meId != null && rx.meMissing) { rx.meMissing = false; rxApplyRows(rx.raw); rxSync(); }   // acabou de descobrir quem é você
+        if (meId != null && rx.meMissing) { rx.meMissing = false; rxApplyRows(rx.raw); rxSync(); }
         const want = rxWanted();
         if (!want) return;
         const now = Date.now(), fxKey = want.fx.join(',');
+        const winKey = want.lo + '|' + fxKey;
         const changed = rx.sentLo !== want.lo || rx.sentFx !== fxKey;   // outra página ou destaque novo
-        if (changed) { rx.force = true; rx.step = 0; rx.same = 0; }
+    
+        if (!changed) {
+            rx.navKey = winKey;
+        } else {
+            if (rx.navKey !== winKey) {   // janela nova (ainda não vista nesta navegação)
+                rx.navKey = winKey;
+                rx.navSince = now;
+                rxPageSave();             // guarda a janela que está saindo
+                rx.storeKey = null;
+                if (rx.sentLo !== undefined && rxPageRestore(want, winKey, fxKey)) return;   // cache: sem rede
+            }
+            // navegação rápida: só lê quando a janela ficar parada por RX_NAV_SETTLE_MS (a 1ª leitura do tópico não espera)
+            if (rx.sentLo !== undefined && now - rx.navSince < RX_NAV_SETTLE_MS) return;
+            rx.force = true; rx.step = 0; rx.same = 0;
+        }
+    
         const interval = document.hidden ? RX_HIDDEN_POLL_MS : (rxIdle() ? Math.max(RX_STEPS[rx.step], RX_IDLE_POLL_MS) : RX_STEPS[rx.step]);
         const due = now - rx.last >= interval;
-        const forced = rx.force && (changed || now - rx.last >= RX_MIN_GAP_MS);   // troca de página ignora o intervalo mínimo
+        const forced = rx.force && (changed || now - rx.last >= RX_MIN_GAP_MS);
         if (!due && !forced) return;
         rx.last = now;
-        // completa: janela nova, sem cursor, faixa maior/menor ou já faz tempo; senão, só o delta
         const full = changed || rx.cursor == null || rx.sentHi !== want.hi || now - rx.fullAt > RX_FULL_EVERY_MS;
         rx.sentLo = want.lo;
         rx.sentHi = want.hi;
         rx.sentFx = fxKey;
-        if (full && rxAdoptShared(key, want)) return;
+        if (full && rxAdoptShared(key, want)) { rx.storeKey = winKey; rx.storeHi = want.hi; return; }
         rx.busy = true;
         try {
             const rows = await rxFetch(want, key, full ? null : rx.cursor);
@@ -517,13 +565,16 @@ SalvaVK.modules.register({
                 const cursor = rxCursorOf(r);
                 if (!rx.cursor || rxCursorCompare(cursor, rx.cursor) > 0) rx.cursor = cursor;
             });
-            if (!rx.cursor) rx.cursor = new Date(Date.now() - 60000).toISOString();   // sem linhas: margem de 1 min contra diferença de relógio
+            if (!rx.cursor) rx.cursor = new Date(Date.now() - 60000).toISOString();
+            rx.storeKey = winKey;
+            rx.storeHi = want.hi;
             const live = rxStoreRows();
             rxIngest(live);
             LS.setJson(RX_SHARE_KEY, { t: Date.now(), by: TAB_ID, topic: key, lo: want.lo, hi: want.hi, fx: want.fx, c: rx.cursor, fa: rx.fullAt, rows: live.map(r => [r.comment_id, r.user_id, r.emoji]) });
-            rxLog('Reações (' + (full ? 'completa' : 'delta') + '): ' + rows.length + ' linha(s) recebida(s), ' + live.length + ' no total | janela ' + want.lo + '–' + want.hi + ' | destaque ' + (fxKey || '—') + ' | próxima leitura em ' + (RX_STEPS[rx.step] / 1000) + ' s');
+            rxLog('Reações (' + (full ? 'completa' : 'delta') + '): ' + rows.length + ' linha(s), ' + live.length + ' no total | janela ' + want.lo + '–' + want.hi + ' | próxima leitura em ' + (RX_STEPS[rx.step] / 1000) + ' s');
         } catch (e) {
-            rx.cursor = null;   // força leitura completa na próxima vez
+            rx.cursor = null;
+            rx.storeKey = null;   // não guarda no cache uma janela com leitura incompleta
             rxLog('Erro ao ler as reações:', e && e.message);
         } finally {
             rx.busy = false;
@@ -1640,7 +1691,6 @@ SalvaVK.modules.register({
         if (label === 'видео') return 'Comentário com vídeo';
         if (label === 'стикер') return 'Comentário com sticker';
         return rxNtMediaLabelPt(value);
-        return '';
     }
 
     // Identifica os tipos de mídia retornados pelo board.getComments do VK.
