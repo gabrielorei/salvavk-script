@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Salva VKTesteChatDois
+// @name         Salva VK
 // @namespace    local.vk.autorefresh
 // @version      6.31
 // @description  Salva VK: atualização de comentários, mídia, destaque e reações personalizadas
@@ -32,6 +32,8 @@
 // @connect      salva-vk-api.salvavk.workers.dev
 // @connect      *
 // @license MIT
+// @downloadURL https://update.greasyfork.org/scripts/600713/Salva%20VK.user.js
+// @updateURL https://update.greasyfork.org/scripts/600713/Salva%20VK.meta.js
 // ==/UserScript==
 
 (function () {
@@ -1279,30 +1281,53 @@
         return true;
     }
 
-    // Garante a caixa de texto do comentário. Se o molde usado era um comentário só com imagem (que no VK não tem
-    // caixa de texto), cria uma, copiando a de outro comentário nativo e colocando-a na mesma posição que ela tem lá.
+    // Garante a caixa de texto do comentário. Se o molde era um comentário só com anexo (sem caixa de texto no VK),
+    // cria o bloco de texto inteiro com a MESMA estrutura do nativo e o coloca acima do rodapé (data + Responder),
+    // nunca dentro dele.
     function ensureBody(n) {
         let box = n.querySelector('[data-testid="showmoretext-in-expanded"]');
         if (box) return box;
+
+        // 1) O molde já tem o comment-text, só falta a caixa interna
+        const ct = n.querySelector('[data-testid="comment-text"]');
+        if (ct) {
+            box = mk('word-break:break-word;');
+            box.setAttribute('data-testid', 'showmoretext-in-expanded');
+            box.appendChild(mk(''));
+            ct.appendChild(box);
+            return box;
+        }
+
+        // 2) Monta o bloco de texto completo: copia de um comentário nativo com texto (doador)
+        //    ou, sem doador, do molde embutido
         const d = findTextDonor(n);
-        let wrap;
-        if (d) {
-            wrap = d.src.cloneNode(true);
-            wrap.querySelectorAll('.vk-ar-grid,.vk-ar-yt').forEach(e => e.remove());
-        } else {
-            wrap = mk('word-break:break-word;');
-            wrap.setAttribute('data-testid', 'showmoretext-in-expanded');
+        const blockOf = el => el && el.closest('.vkui-padding-block-start');
+        let block = d ? blockOf(d.src) : null;
+        if (!block || !d.card.contains(block)) {
+            const bt = builtinTpl().querySelector('[data-testid="comment-text"]');
+            block = blockOf(bt);
         }
-        const ctN = n.querySelector('[data-testid="comment-text"]');
-        if (ctN && d) ctN.replaceWith(wrap);
-        else if (!placeLikeText(n, wrap, d)) {
-            const rep = n.querySelector('[data-testid="comment-reply"]');
-            const row = rep && rep.parentElement;
-            if (!row) return null;
-            row.insertAdjacentElement('beforebegin', wrap);
+        if (!block) return null;
+        block = block.cloneNode(true);
+        block.querySelectorAll('.vk-ar-grid,.vk-ar-yt,.vk-ar-photo-note').forEach(e => e.remove());
+        block.querySelectorAll('[data-ar-quote]').forEach(e => e.removeAttribute('data-ar-quote'));
+        const cloneBox = block.querySelector('[data-testid="showmoretext-in-expanded"]');
+        if (cloneBox) {
+            cloneBox.textContent = '';
+            cloneBox.appendChild(mk(''));   // o fillBody escreve em box.firstElementChild
         }
+
+        // 3) Posição: logo antes do rodapé (o flex com data/Responder/curtir) e do espaçador que o precede
+        const rep = n.querySelector('[data-testid="comment-reply"]');
+        const row = rep && rep.parentElement;                  // vkui-block-size (data + Responder)
+        const footer = row && row.parentElement;               // flex horizontal do rodapé
+        if (!footer || !footer.parentElement) return null;
+        const prev = footer.previousElementSibling;
+        const anchor = prev && prev.classList.contains('vkit-S4nqJ8') ? prev : footer;
+        anchor.parentElement.insertBefore(block, anchor);
+
         box = n.querySelector('[data-testid="showmoretext-in-expanded"]');
-        log('Comentário sem caixa de texto no molde; caixa criada em', idOf(n), d ? '(posição copiada de ' + idOf(d.card) + ')' : '(sem modelo)');
+        log('Comentário sem caixa de texto no molde; bloco de texto criado em', idOf(n), d ? '(copiado de ' + idOf(d.card) + ')' : '(molde embutido)');
         return box;
     }
 
@@ -6152,7 +6177,7 @@
 
             const secs = ((performance.now() - t0) / 1000).toFixed(2);
             cycles++;
-            status('⚡ v6.30 #' + cycles + ' · ' + secs + 's · ' +
+            status('⚡ v6.31 #' + cycles + ' · ' + secs + 's · ' +
                    (offset + 1) + '-' + (offset + items.length) + ' de ' + total +
                    (fresh.length ? ' · +' + fresh.length + ' NOVO(S)' : '') + (tailCapped ? ' · limite da rolagem contínua' : ''));
 
@@ -6716,7 +6741,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     const SalvaVK = Object.freeze({
         core: Object.freeze({
-            version: '6.33',
+            version: '6.31',
             apiVersion: 1,
             get accountId() { return meId || null; },
             get page() {
@@ -6989,5 +7014,5 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     // ===== FIM DA INTERFACE DE COMPATIBILIDADE =====
 
     loop();
-    log('Ativo (v6.33). Pausa de', INTERVAL_MS, 'ms entre consultas. Abas em segundo plano:', BG_TABS, '| id da aba:', TAB_ID);
+    log('Ativo (v6.31). Pausa de', INTERVAL_MS, 'ms entre consultas. Abas em segundo plano:', BG_TABS, '| id da aba:', TAB_ID);
 })();
