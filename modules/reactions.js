@@ -1459,9 +1459,20 @@ SalvaVK.modules.register({
         bd.appendChild(rxIcon(r, 18));
         host.appendChild(bd);
     }
-
-    // Reaplicação síncrona (roda antes da pintura): usa só o que já está no espelho / já resolvido
-    // Corrige prévias de mídia nas notificações nativas do VK (não passam pelo renderizador próprio).
+    
+    // Rótulos em russo que o VK mostra como "texto" da prévia quando o comentário só tem mídia.
+    function rxNtMediaLabelPt(raw) {
+        const s = String(raw || '').trim().toLocaleLowerCase('ru');
+        if (s === 'видео') return 'Comentário com vídeo';
+        if (s === 'стикер') return 'Comentário com sticker';
+        if (s === 'граффити') return 'Comentário com grafite';
+        if (s === 'gif' || s === 'гиф') return 'Comentário com GIF';
+        // "Фото", "Фотография", "3 фото", "2 фотографии"
+        const m = s.match(/^(?:(\d+)\s*)?(?:фото|фотографии|фотография|фотографий)$/);
+        if (m) return m[1] && Number(m[1]) > 1 ? 'Comentário com ' + m[1] + ' imagens' : 'Comentário com imagem';
+        return '';
+    }
+    
     function rxNtListMediaPreview() {
         document.querySelectorAll('[data-testid^="notification-item-"]').forEach(item => {
             try {
@@ -1470,13 +1481,25 @@ SalvaVK.modules.register({
                 if (!reactionText || !RX_NT_LIKE_RE.test(reactionText.textContent || '')) return;
                 const preview = item.querySelector('[style*="textclamp-lines"]');
                 if (!preview) return;
-                const label = String(preview.textContent || '').trim().toLocaleLowerCase('ru');
-                const translated = label === 'видео' ? 'Comentário com vídeo' :
-                    label === 'стикер' ? 'Comentário com sticker' : '';
-                if (!translated) return;
-                if (preview.textContent.trim() !== translated) preview.textContent = translated;
+    
+                // Já traduzida por nós: só garante que o ícone não voltou
+                const done = preview.hasAttribute('data-ar-nt-media-preview');
+                const tn = [...preview.childNodes].filter(n => n.nodeType === 3 && n.nodeValue.trim()).pop();
+                const raw = tn ? tn.nodeValue : preview.textContent;
+                const translated = rxNtMediaLabelPt(raw);
+                if (!translated && !done) return;
+    
+                if (translated) {
+                    if (tn) { if (tn.nodeValue.trim() !== translated) tn.nodeValue = translated; }
+                    else if (preview.textContent.trim() !== translated) preview.textContent = translated;
+                    preview.setAttribute('data-ar-nt-media-preview', String(raw).trim().toLocaleLowerCase('ru'));
+                }
+    
+                // Esconde o ícone (em vez de remover o nó, para não conflitar com o React do VK)
+                preview.querySelectorAll('svg').forEach(s => {
+                    if (s.style.display !== 'none') s.style.setProperty('display', 'none', 'important');
+                });
                 preview.style.color = 'var(--vkui--color_text_secondary, rgb(129, 140, 153))';
-                preview.setAttribute('data-ar-nt-media-preview', label);
             } catch (e) {}
         });
     }
@@ -1658,6 +1681,7 @@ SalvaVK.modules.register({
         const label = String(value || '').trim().toLocaleLowerCase('ru');
         if (label === 'видео') return 'Comentário com vídeo';
         if (label === 'стикер') return 'Comentário com sticker';
+        return rxNtMediaLabelPt(value);
         return '';
     }
 
