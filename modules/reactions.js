@@ -167,9 +167,12 @@ SalvaVK.modules.register({
         '[data-testid="comment-like"] span *{color:inherit !important}',
         // janela de notificações
         '[data-ar-nt-hide]{display:none !important}[data-ar-nt-host]{position:relative}',
-        '.ar-nt-bd{position:absolute;right:-5px;bottom:-5px;width:28px;height:28px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
-            'background:var(--vkui--color_background_content,#fff);border:1px solid rgba(128,128,128,.28);' +
-            'box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 2px 5px rgba(0,0,0,.16);pointer-events:none}',
+        '.ar-nt-bd{--arb:var(--vkui--color_background_content,#fff);position:absolute;right:-4px;bottom:-4px;width:22px;height:22px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
+            'background:#f0f2f5;box-shadow:0 0 0 3px var(--arb),0 1px 4px 1px rgba(0,0,0,.2);pointer-events:none}',
+        'html[data-ar-dark] .ar-nt-bd{--arb:var(--vkui--color_background_content,#232324);background:#3b3c3f;box-shadow:0 0 0 3px var(--arb),0 1px 4px 1px rgba(0,0,0,.5)}',
+        '@keyframes ar-nt-pop{0%{transform:scale(.55);opacity:0}65%{transform:scale(1.14);opacity:1}100%{transform:scale(1);opacity:1}}',
+        '.ar-nt-bd.ar-nt-pop{animation:ar-nt-pop .3s cubic-bezier(.2,.9,.3,1) both}',
+        '@media (prefers-reduced-motion:reduce){.ar-nt-bd.ar-nt-pop{animation:none}}',
         '.ar-nt-chip{font-weight:550;color:var(--vkui--color_text_accent,#2a5885)}',
         'html[data-ar-dark] .ar-nt-chip{color:#a6d0ff}',
         '.notifier_baloon .ar-nt-chip{color:#a6d0ff !important}',
@@ -1469,6 +1472,22 @@ SalvaVK.modules.register({
         rxNtListBadge(info, uniq.length === 1 ? uniq[0] : null, h);
     }
 
+    // Cria o selo. A animação de entrada só toca na 1ª vez que cada selo aparece
+    // (a lista é redesenhada com frequência e não pode ficar "pulando").
+    const rxNtSeen = new Set();
+    function rxNtBadgeEl(r, sig) {
+        const bd = document.createElement('span');
+        bd.className = 'ar-nt-bd';
+        bd.setAttribute('data-sig', sig);
+        if (!rxNtSeen.has(sig)) {
+            rxNtSeen.add(sig);
+            bd.classList.add('ar-nt-pop');
+            if (rxNtSeen.size > 300) rxNtSeen.delete(rxNtSeen.values().next().value);
+        }
+        bd.appendChild(rxIcon(r, 17));
+        return bd;
+    }
+
     // Selo no canto do avatar (r = reação, ou o coração para curtida nativa; null remove)
     function rxNtListBadge(info, r, h) {
         const av = info.row.querySelector('[data-testid="notification-avatar"], [data-testid="notification-additional-avatar"]');
@@ -1479,11 +1498,7 @@ SalvaVK.modules.register({
         if (old && old.getAttribute('data-sig') === h) return;
         if (old) old.remove();
         host.setAttribute('data-ar-nt-host', '1');
-        const bd = document.createElement('span');
-        bd.className = 'ar-nt-bd';
-        bd.setAttribute('data-sig', h);
-        bd.appendChild(rxIcon(r, 20));
-        host.appendChild(bd);
+        host.appendChild(rxNtBadgeEl(r, h));
     }
     
     // Rótulos em russo que o VK mostra como "texto" da prévia quando o comentário só tem mídia.
@@ -2021,11 +2036,7 @@ SalvaVK.modules.register({
                     avatarHost.appendChild(stack);
                 }
 
-                const badge = document.createElement('span');
-                badge.className = 'ar-nt-bd';
-                badge.setAttribute('data-sig', key + '-' + group.emoji);
-                badge.appendChild(rxIcon(group.reaction, 20));
-                avatarHost.appendChild(badge);
+                avatarHost.appendChild(rxNtBadgeEl(group.reaction, key + '-' + group.emoji));
             }
         });
 
