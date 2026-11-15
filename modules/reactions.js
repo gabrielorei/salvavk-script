@@ -14,7 +14,7 @@ SalvaVK.modules.register({
         const idOf = api.ui.commentId.idOf, numId = api.ui.commentId.numId;
         const LIKE_COUNT_COLOR = api.ui.colors.likeCount;
         const HEART_OUTLINE = api.ui.colors.heartOutline, LIKE_GRAY = api.ui.colors.likeGray;
-        const DEBUG = true;
+        const DEBUG = false;
 
     'use strict';
     // Com @grant, "window" é uma cópia isolada: o gancho de fetch/XHR precisa ir para a janela REAL da página
@@ -40,9 +40,10 @@ SalvaVK.modules.register({
     const RX_GAP_IDS = 1000000;     // ids de comentários com distância maior que isso não contam como a mesma janela (ignora id provisório)
     const RX_NT_NEGATIVE = false;   // false = só reações positivas geram notificação (as negativas não dão curtida no VK)
     const RX_NT_POP_RETRY_MS = [1200, 2000, 3000, 4000];   // pop-up: se a reação ainda não chegou ao banco, tenta de novo nesses intervalos
-    const RX_NT_LIST_RETRY_MS = [4000, 10000, 30000];      // janela: idem; esgotadas, só olha de novo a cada 2 min
+    const RX_NT_LIST_RETRY_MS = [4000];      // janela: idem; esgotadas, só olha de novo a cada 2 min
     const RX_NT_MIRROR_DAYS = 3;                // espelho local: reações dos últimos N dias
-    const RX_NT_MIRROR_EVERY_MS = 300000;       // atualização do espelho (só o que mudou); 0 = desliga
+    const RX_NT_MIRROR_EVERY_MS = 3600000;      // espelho: atualização de segurança a cada 1 h; o normal é atualizar ao ABRIR a janela de notificações
+    const RX_NT_OPEN_GAP_MS = 20000;            // ao abrir a janela: atualiza se a última foi há mais que isso
     const RX_NT_MIRROR_LIST_MS = 30000;         // idem, com a janela de notificações aberta
     const RX_NT_MIRROR_IDLE_MS = 900000;        // idem, com a aba parada (ociosa)
     const RX_NAV_SETTLE_MS = 1500;           // troca de página: espera a navegação estabilizar antes de ler
@@ -170,9 +171,9 @@ SalvaVK.modules.register({
         '.ar-nt-bd{--arb:var(--vkui--color_background_content,#fff);position:absolute;right:-5px;bottom:-5px;width:26px;height:26px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
             'background:#f0f2f5;box-shadow:0 0 0 3px var(--arb),0 1px 4px 1px rgba(0,0,0,.2);pointer-events:none}',
         'html[data-ar-dark] .ar-nt-bd{--arb:var(--vkui--color_background_content,#232324);background:#3b3c3f;box-shadow:0 0 0 3px var(--arb),0 1px 4px 1px rgba(0,0,0,.5)}',
-        '@keyframes ar-nt-pop{0%{transform:scale(.7)}60%{transform:scale(1.18)}100%{transform:scale(1)}}',
-        '[data-testid^="notification-item-"]:hover .ar-nt-bd{animation:ar-nt-pop .3s cubic-bezier(.2,.9,.3,1)}',
-        '@media (prefers-reduced-motion:reduce){.ar-nt-bd{animation:none !important}}',
+        '.ar-nt-bd{transition:transform .35s cubic-bezier(.25,.8,.25,1)}',
+        '[data-testid^="notification-item-"]:hover .ar-nt-bd{transform:scale(1.08)}',
+        '@media (prefers-reduced-motion:reduce){.ar-nt-bd{transition:none !important}}',
         '.ar-nt-chip{font-weight:550;color:var(--vkui--color_text_accent,#2a5885)}',
         'html[data-ar-dark] .ar-nt-chip{color:#a6d0ff}',
         '.notifier_baloon .ar-nt-chip{color:#a6d0ff !important}',
@@ -2145,19 +2146,22 @@ SalvaVK.modules.register({
                 m.forEach((_, cid) => { const e = rxNtMirror.get(key + ':' + cid); if (e) e.m.forEach((__, u) => us.push(u)); });
                 await rxNtEnsureUsers(us);
             } catch (e) { rxLog('Notificação (janela): erro no lote:', e && e.message); }
-            finally { sts.forEach(st => { st.busy = false; rxRetry(st, RX_NT_LIST_RETRY_MS, 120000); }); }
+            finally { sts.forEach(st => { st.busy = false; rxRetry(st, RX_NT_LIST_RETRY_MS, 900000); }); }
         }));
+        if (need.size) rxNtMirrorSave();   // grava uma vez ao fim da rodada: recarregar a página não repete as consultas
         if (users.size) { try { await rxNtEnsureUsers([...users]); } catch (e) { rxLog('Notificação (janela): erro ao buscar nomes:', e && e.message); } }
         if (need.size || users.size) rxNtSched();
     }
 
-    let rxNtBusy = false;
+    let rxNtBusy = false, rxNtListWasOpen = false;
     async function rxNtTick() {
         if (rxNtBusy) return;
         rxNtBusy = true;
         try {
-            const listOpen = !!document.querySelector('[data-testid="notification-text"]');
-            const mirrorEvery = listOpen ? RX_NT_MIRROR_LIST_MS : (rxIdle() ? RX_NT_MIRROR_IDLE_MS : RX_NT_MIRROR_EVERY_MS);
+            const listOpen = [...document.querySelectorAll('[data-testid="notification-text"]')].some(n => n.getClientRects().length > 0);
+            const opened = listOpen && !rxNtListWasOpen;   // a janela acabou de abrir (ou a aba voltou com ela aberta)
+            rxNtListWasOpen = listOpen && !document.hidden;
+            const mirrorEvery = opened ? RX_NT_OPEN_GAP_MS : RX_NT_MIRROR_EVERY_MS;
             if (!document.hidden && RX_NT_MIRROR_EVERY_MS && Date.now() - rxNtMirrorAt >= mirrorEvery) await rxNtMirrorRefresh();
             const pops = [...document.querySelectorAll('.notifier_baloon[class*="notifier_type_like_topic_comment"]')];
             await Promise.all(pops.map(p => rxNtPopup(p).catch(() => {})));
@@ -2167,8 +2171,6 @@ SalvaVK.modules.register({
             rxNtBusy = false;
         }
     }
-
-
 
         // A troca de sessão invalida a identidade anterior e confirma a nova conta nesta aba.
         api.vk.onSessionChange(() => {
