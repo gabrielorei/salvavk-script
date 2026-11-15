@@ -167,12 +167,12 @@ SalvaVK.modules.register({
         '[data-testid="comment-like"] span *{color:inherit !important}',
         // janela de notificações
         '[data-ar-nt-hide]{display:none !important}[data-ar-nt-host]{position:relative}',
-        '.ar-nt-bd{--arb:var(--vkui--color_background_content,#fff);position:absolute;right:-4px;bottom:-4px;width:22px;height:22px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
+        '.ar-nt-bd{--arb:var(--vkui--color_background_content,#fff);position:absolute;right:-5px;bottom:-5px;width:26px;height:26px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
             'background:#f0f2f5;box-shadow:0 0 0 3px var(--arb),0 1px 4px 1px rgba(0,0,0,.2);pointer-events:none}',
         'html[data-ar-dark] .ar-nt-bd{--arb:var(--vkui--color_background_content,#232324);background:#3b3c3f;box-shadow:0 0 0 3px var(--arb),0 1px 4px 1px rgba(0,0,0,.5)}',
-        '@keyframes ar-nt-pop{0%{transform:scale(.55);opacity:0}65%{transform:scale(1.14);opacity:1}100%{transform:scale(1);opacity:1}}',
-        '.ar-nt-bd.ar-nt-pop{animation:ar-nt-pop .3s cubic-bezier(.2,.9,.3,1) both}',
-        '@media (prefers-reduced-motion:reduce){.ar-nt-bd.ar-nt-pop{animation:none}}',
+        '@keyframes ar-nt-pop{0%{transform:scale(.7)}60%{transform:scale(1.18)}100%{transform:scale(1)}}',
+        '[data-testid^="notification-item-"]:hover .ar-nt-bd{animation:ar-nt-pop .3s cubic-bezier(.2,.9,.3,1)}',
+        '@media (prefers-reduced-motion:reduce){.ar-nt-bd{animation:none !important}}',
         '.ar-nt-chip{font-weight:550;color:var(--vkui--color_text_accent,#2a5885)}',
         'html[data-ar-dark] .ar-nt-chip{color:#a6d0ff}',
         '.notifier_baloon .ar-nt-chip{color:#a6d0ff !important}',
@@ -1472,19 +1472,12 @@ SalvaVK.modules.register({
         rxNtListBadge(info, uniq.length === 1 ? uniq[0] : null, h);
     }
 
-    // Cria o selo. A animação de entrada só toca na 1ª vez que cada selo aparece
-    // (a lista é redesenhada com frequência e não pode ficar "pulando").
-    const rxNtSeen = new Set();
+    // Cria o selo. A animação toca ao passar o mouse na notificação (regra de CSS acima).
     function rxNtBadgeEl(r, sig) {
         const bd = document.createElement('span');
         bd.className = 'ar-nt-bd';
         bd.setAttribute('data-sig', sig);
-        if (!rxNtSeen.has(sig)) {
-            rxNtSeen.add(sig);
-            bd.classList.add('ar-nt-pop');
-            if (rxNtSeen.size > 300) rxNtSeen.delete(rxNtSeen.values().next().value);
-        }
-        bd.appendChild(rxIcon(r, 17));
+        bd.appendChild(rxIcon(r, 20));
         return bd;
     }
 
@@ -1976,8 +1969,8 @@ SalvaVK.modules.register({
             const avatarHost = avatar && avatar.parentElement;
             if (avatar && avatarHost && actors.length) {
                 avatarHost.setAttribute('data-ar-nt-host', '1');
-                avatarHost.querySelectorAll(':scope > .ar-nt-bd').forEach(n => n.remove());
-
+    avatarHost.querySelectorAll(':scope > .ar-nt-bd').forEach(n => { if (n.getAttribute('data-sig') !== key + '-' + group.emoji) n.remove(); });
+                
                 if (actors.length === 1) {
                     // Desfaz qualquer estilo de empilhamento de uma renderização anterior.
                     const candidates = [...avatarHost.querySelectorAll('a[data-testid="notification-avatar"], a[data-ar-nt-own-avatar]')];
@@ -2036,7 +2029,7 @@ SalvaVK.modules.register({
                     avatarHost.appendChild(stack);
                 }
 
-                avatarHost.appendChild(rxNtBadgeEl(group.reaction, key + '-' + group.emoji));
+                if (!avatarHost.querySelector(':scope > .ar-nt-bd')) avatarHost.appendChild(rxNtBadgeEl(group.reaction, key + '-' + group.emoji));
             }
         });
 
