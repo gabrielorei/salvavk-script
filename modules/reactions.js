@@ -1227,18 +1227,12 @@ SalvaVK.modules.register({
         return null;
     }
 
-    // "[ícone] nome": ícone centralizado na linha + nome em negrito e cor de destaque, tudo no mesmo fluxo do texto
+    // nome da reação em negrito e cor de destaque, no mesmo fluxo do texto (sem ícone)
     function rxNtChip(r) {
-        const wrap = document.createElement('span');
-        const ic = rxIcon(r, 20);   // mantém o clip/ajuste próprio de cada reação (inclusive as Palmas)
-        ic.style.display = 'inline-block';
-        ic.style.verticalAlign = -4px;
-        ic.style.margin = '0 4px 0 1px';
         const name = document.createElement('span');
         name.className = 'ar-nt-chip';
         name.textContent = r.name.toLocaleLowerCase('pt-BR');
-        wrap.append(ic, name);
-        return wrap;
+        return name;
     }
 
     function rxNtAppendPhrase(target, reaction, many) {
