@@ -163,7 +163,10 @@ SalvaVK.modules.register({
         '[data-ar-nt-hide]{display:none !important}[data-ar-nt-host]{position:relative}',
         '.ar-nt-bd{position:absolute;right:-5px;bottom:-5px;width:28px;height:28px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
             'background:var(--vkui--color_background_content,#fff);border:1px solid rgba(128,128,128,.28);' +
-            'box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 2px 5px rgba(0,0,0,.16);pointer-events:none}'
+            'box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 2px 5px rgba(0,0,0,.16);pointer-events:none}',
+        '.ar-nt-chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px 0 4px;margin:0 1px;vertical-align:-6px;border-radius:11px;' +
+            'background:rgba(42,88,133,.10);color:var(--vkui--color_text_accent,#2a5885);font-weight:500;font-size:.95em;line-height:1;white-space:nowrap}',
+        'html[data-ar-dark] .ar-nt-chip{background:rgba(113,170,235,.16);color:#a6d0ff}',
     ].join(''), 'vk-arx-css');
 
     // ---------- Reações ----------
@@ -172,15 +175,15 @@ SalvaVK.modules.register({
     // O id 0 é reservado: no banco, emoji = '0' significa "sem reação" (remoção lógica, para a leitura por delta enxergar a remoção).
     const RX_LIST = [
         { id: 1, name: 'Coração', fb: '❤️', img: 'https://sun1-57.userapi.com/s/v1/s2/ANm2DG_5t7fPrmeAhECmu5qvAZPRFmwnXYiN5biDW4O9Jr9chK5hhxDfvfRJGkMV5vpy9WAQ3giKa2GMUsLuE74.svg' },
-        { id: 2, name: 'Fogo', fb: '🔥', img: 'https://sun9-56.userapi.com/s/v1/s2/iLoIErNjY4yga3YAbx8wtJeut-HqvvGWAteP6-VnoIiEESuMI1vUxJsLBpLRIbkGSOngwaykHXlwZF4pKylTESs.svg' },
-        { id: 3, name: 'Morrendo de rir', fb: '😂', img: 'https://sun9-48.userapi.com/s/v1/s2/DbyHbkmEOiS3llQKEPWZEafgIy5DloPacPax2ObRQIl9zIxfdpqxEG6w83piLhNlv68xeID3GFuF3vZAbnhl35M.svg' },
+        { id: 2, name: 'Foguinho', fb: '🔥', img: 'https://sun9-56.userapi.com/s/v1/s2/iLoIErNjY4yga3YAbx8wtJeut-HqvvGWAteP6-VnoIiEESuMI1vUxJsLBpLRIbkGSOngwaykHXlwZF4pKylTESs.svg' },
+        { id: 3, name: 'Risada', fb: '😂', img: 'https://sun9-48.userapi.com/s/v1/s2/DbyHbkmEOiS3llQKEPWZEafgIy5DloPacPax2ObRQIl9zIxfdpqxEG6w83piLhNlv68xeID3GFuF3vZAbnhl35M.svg' },
         { id: 26, name: 'Palmas', fb: '👏', img: 'https://sun1-23.userapi.com/s/v1/s2/Zzysh-8t4hyBvLI4C7FpXzZmHLBKqRjSZec1zvPK_MNwb8UMAiWKp-tmrUUANRSK-qZ4r9Fux7rnXCdajJvIfDs.svg', adj: 'translate(0,-2.5px)', pillClip: 'inset(18% 0 0 0)', pillAdj: 'translate(0,-1.5px)' },
         { id: 19, name: 'Surpresa', fb: '😮', img: 'https://sun1-27.userapi.com/s/v1/s2/DJSrHsK6WIV2r-SO4_ef57sZdu2m4eDeAeSYla8HNSh4t3TP44BDnjuIvjd4wejt_mwFEdn-jvITLO-Fd571bF0.svg' },
         { id: 39, name: 'Diabinho', fb: '😈', img: 'https://sun1-83.userapi.com/s/v1/s2/372vSKMBRDEIm366NF5tcZwx1iVVU3IDdsgFFHCH0J-f4OV7i01PiUc3CNEXqU02ZT0BFg4Oda8X-E1CE-cOFlQ.svg' },
-        { id: 22, name: 'Revirando os olhos', fb: '🙄', img: 'https://sun1-56.userapi.com/s/v1/s2/W4swqWNQcNOZoA7c9XxDAKvgkI_eTxdp3baixdxFKPZDjRuS-GXr9fb0Ha4OOgnZJvCXkYRvorQ0cuG3vw4Fss4.svg', noLike: true },
+        { id: 22, name: 'Desdém', fb: '🙄', img: 'https://sun1-56.userapi.com/s/v1/s2/W4swqWNQcNOZoA7c9XxDAKvgkI_eTxdp3baixdxFKPZDjRuS-GXr9fb0Ha4OOgnZJvCXkYRvorQ0cuG3vw4Fss4.svg', noLike: true },
         { id: 17, name: 'Palhaço', fb: '🤡', img: 'https://sun9-9.userapi.com/s/v1/s2/PzDPR5_qLylXfFBmx78CLPec6VkqNGHVcV-2LYhsAhVUngr0I4P27UNIno0Kp42NKCGvovUbNmz4yqOgtFZoNlI.svg', noLike: true },
-        { id: 7, name: 'Chorando', fb: '😢', img: 'https://sun1-28.userapi.com/s/v1/s2/Ko6jOFBPclTnWinVZVRHcAjJVdUoVIPRyUviU3hH4K203aPIIvxARwZzhb9vMSgOr8RDejrvDoHg2rn2ZcIVnU8.svg', noLike: true },
-        { id: 31, name: 'Xingando', fb: '🤬', img: 'https://sun1-89.userapi.com/s/v1/s2/ZOcBE3-24QPGljrDPEgj1AeVjzgssgxOqlAsZ5-vBJC8DkFtVip492RIVflYW5ePwnC98ucOHhqHwVDjmE262js.svg', noLike: true }
+        { id: 7, name: 'Choro', fb: '😢', img: 'https://sun1-28.userapi.com/s/v1/s2/Ko6jOFBPclTnWinVZVRHcAjJVdUoVIPRyUviU3hH4K203aPIIvxARwZzhb9vMSgOr8RDejrvDoHg2rn2ZcIVnU8.svg', noLike: true },
+        { id: 31, name: 'Raiva', fb: '🤬', img: 'https://sun1-89.userapi.com/s/v1/s2/ZOcBE3-24QPGljrDPEgj1AeVjzgssgxOqlAsZ5-vBJC8DkFtVip492RIVflYW5ePwnC98ucOHhqHwVDjmE262js.svg', noLike: true }
     ];
     const RX_BY_ID = {};
     RX_LIST.forEach(r => { RX_BY_ID[String(r.id)] = r; });
@@ -1225,29 +1228,31 @@ SalvaVK.modules.register({
         return null;
     }
 
+    // "[ícone Nome]": pílula sutil com o ícone do VK e o nome da reação
+    function rxNtChip(r) {
+        const chip = document.createElement('span');
+        chip.className = 'ar-nt-chip';
+        chip.appendChild(rxIcon(r, 18));
+        chip.appendChild(document.createTextNode(r.name.toLocaleLowerCase('pt-BR')));
+        return chip;
+    }
+
     function rxNtAppendPhrase(target, reaction, many) {
         target.style.fontWeight = '400';
         const T = s => document.createTextNode(s);
-        const im = rxIcon(reaction, 20);
-        im.style.display = 'inline-block';
-        im.style.verticalAlign = '-5px';
-        target.append(T((many ? 'reagiram' : 'reagiu') + ' com '), im, T(' ao seu comentário'));
+        target.append(T((many ? 'reagiram' : 'reagiu') + ' com '), rxNtChip(reaction), T(' ao seu comentário'));
     }
 
     function rxNtNodes(rs, orig) {
         const got = rs.filter(Boolean), uniq = [...new Map(got.map(r => [Number(r.id), r])).values()];
         const T = s => document.createTextNode(s);
-        const ic = r => {
-            const im = rxIcon(r, 20);
-            im.style.display = 'inline-block';
-            im.style.verticalAlign = '-5px';
-            return im;
-        };
+        // todos reagiram com a mesma reação: "reagiu com [ícone Nome] ao seu comentário"
         if (got.length === rs.length && uniq.length === 1) {
-            return [T(' ' + (rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne) + ' com '), ic(uniq[0]), T(' ' + RX_NT.tail + ' ')];
+            return [T(' ' + (rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne) + ' com '), rxNtChip(uniq[0]), T(' ' + RX_NT.tail + ' ')];
         }
+        // reações diferentes (ou só alguns reagiram): texto + pílulas em sequência
         const out = [T(got.length === rs.length ? ' ' + (rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne) + ' ' + RX_NT.tail + ' ' : (orig || '') + ' ')];
-        uniq.forEach(r => { out.push(ic(r)); out.push(T(' ')); });
+        uniq.forEach(r => { out.push(rxNtChip(r)); out.push(T(' ')); });
         return out;
     }
 
