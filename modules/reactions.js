@@ -161,8 +161,8 @@ SalvaVK.modules.register({
         '[data-testid="comment-like"] span *{color:inherit !important}',
         // janela de notificações
         '[data-ar-nt-hide]{display:none !important}[data-ar-nt-host]{position:relative}',
-        '.ar-nt-bd{position:absolute;right:-6px;bottom:-6px;width:26px;height:26px;border:1px solid rgba(128,128,128,.18);box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
-            'background:var(--vkui--color_background_content,#fff);box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff);pointer-events:none}'
+        '.ar-nt-bd{position:absolute;right:-3px;bottom:-3px;width:22px;height:22px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
+            'background:var(--vkui--color_background_content,#fff);box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 1px 3px rgba(0,0,0,.18);pointer-events:none}'
     ].join(''), 'vk-arx-css');
 
     // ---------- Reações ----------
@@ -1224,73 +1224,29 @@ SalvaVK.modules.register({
         return null;
     }
 
-    // ---------- Texto novo ----------
-    // rs = uma entrada por pessoa (objeto da reação ou null = curtida comum)
-    //  - todos reagiram e com a mesma: "reagiu com [ícone] ao seu comentário"
-    //  - todos reagiram, reações diferentes: "reagiram ao seu comentário [ícones]"
-    //  - só alguns reagiram: mantém o texto original e acrescenta os ícones
-    // Texto das reações nas notificações próprias.
-    function rxNtReactionEmoji(r) {
-        const emojis = {
-            2: '🔥', 3: '😂', 26: '👏', 19: '😮', 39: '😈',
-            22: '🙄', 17: '🤡', 7: '😢', 31: '🤬'
-        };
-        const id = Number(r && r.id);
-        return emojis[id] || (r && r.fb) || '';
-    }
-
-    function rxNtReactionPhrase(r, many) {
-        const id = Number(r && r.id);
-        const emoji = rxNtReactionEmoji(r);
-        if (id === 22) return 'revirando os olhos' + (emoji ? ' ' + emoji : '');
-        if (id === 17) return (many ? 'te acharam' : 'te achou') + ' um palhaço' + (emoji ? ' ' + emoji : '');
-        const labels = {
-            2: 'foguinho', 3: 'morrendo de rir', 26: 'batendo palmas',
-            19: 'surpresa', 39: 'diabinho', 7: 'tristeza', 31: 'raiva'
-        };
-        return (labels[id] || (r && r.name ? r.name.toLocaleLowerCase('pt-BR') : 'reação')) + (emoji ? ' ' + emoji : '');
-    }
-
     function rxNtAppendPhrase(target, reaction, many) {
         target.style.fontWeight = '400';
-        const id = Number(reaction && reaction.id);
-        const emoji = rxNtReactionEmoji(reaction);
-        const addText = value => target.appendChild(document.createTextNode(value));
-
-        if (id === 3 || id === 26 || id === 22) {
-            addText(many ? 'estão ' : 'está ');
-            addText(id === 3 ? 'morrendo de rir' : id === 26 ? 'batendo palmas' : 'revirando os olhos');
-            addText((emoji ? ' ' + emoji : '') + ' com seu comentário');
-        } else if (id === 17) {
-            addText(many ? 'te acharam um ' : 'te achou um ');
-            addText('palhaço');
-            addText((emoji ? ' ' + emoji : '') + ' com seu comentário');
-        } else {
-            addText(many ? 'reagiram com ' : 'reagiu com ');
-            addText(rxNtReactionPhrase(reaction, many));
-            addText(' ao seu comentário');
-        }
+        const T = s => document.createTextNode(s);
+        const im = rxIcon(reaction, 16);
+        im.style.display = 'inline-block';
+        im.style.verticalAlign = '-3px';
+        target.append(T((many ? 'reagiram' : 'reagiu') + ' com '), im, T(' ao seu comentário'));
     }
 
-    function rxNtNodes(rs, orig, size) {
-        const got = rs.filter(Boolean), uniq = [...new Map(got.map(r => [Number(r.id), r])).values()], sz = size || 16;
+    function rxNtNodes(rs, orig) {
+        const got = rs.filter(Boolean), uniq = [...new Map(got.map(r => [Number(r.id), r])).values()];
         const T = s => document.createTextNode(s);
+        const ic = r => {
+            const im = rxIcon(r, 16);
+            im.style.display = 'inline-block';
+            im.style.verticalAlign = '-3px';
+            return im;
+        };
+        // todos reagiram e com a mesma reação: "reagiu com [ícone] ao seu comentário"
         if (got.length === rs.length && uniq.length === 1) {
-            const out = [], many = rs.length > 1;
-            const reaction = uniq[0];
-            const id = Number(reaction.id);
-            const emoji = rxNtReactionEmoji(reaction);
-            if (id === 3 || id === 26 || id === 22) {
-                out.push(T(many ? ' estão ' : ' está '), T(id === 3 ? 'morrendo de rir' : id === 26 ? 'batendo palmas' : 'revirando os olhos'), T((emoji ? ' ' + emoji : '') + ' com seu comentário '));
-            } else if (id === 17) {
-                out.push(T(many ? ' te acharam um ' : ' te achou um '), T('palhaço'), T((emoji ? ' ' + emoji : '') + ' com seu comentário '));
-            } else {
-                const phrase = rxNtReactionPhrase(reaction, many);
-                out.push(T(' ' + (many ? RX_NT.verbMany : RX_NT.verbOne) + ' com '), T(phrase), T(' ao seu comentário '));
-            }
-            return out;
+            return [T(' ' + (rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne) + ' com '), ic(uniq[0]), T(' ' + RX_NT.tail + ' ')];
         }
-        const ic = r => { const im = rxIcon(r, sz); im.style.display = 'inline-block'; im.style.verticalAlign = (sz > 16 ? '-4px' : '-3px'); return im; };
+        // reações diferentes (ou só alguns reagiram): texto + ícones em sequência
         const out = [T(got.length === rs.length ? ' ' + (rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne) + ' ' + RX_NT.tail + ' ' : (orig || '') + ' ')];
         uniq.forEach(r => { out.push(ic(r)); out.push(T(' ')); });
         return out;
@@ -1456,7 +1412,7 @@ SalvaVK.modules.register({
         const bd = document.createElement('span');
         bd.className = 'ar-nt-bd';
         bd.setAttribute('data-sig', h);
-        bd.appendChild(rxIcon(r, 18));
+        bd.appendChild(rxIcon(r, 16));
         host.appendChild(bd);
     }
     
@@ -1999,7 +1955,7 @@ SalvaVK.modules.register({
                 const badge = document.createElement('span');
                 badge.className = 'ar-nt-bd';
                 badge.setAttribute('data-sig', key + '-' + group.emoji);
-                badge.appendChild(rxIcon(group.reaction, 20));
+                badge.appendChild(rxIcon(group.reaction, 16));
                 avatarHost.appendChild(badge);
             }
         });
