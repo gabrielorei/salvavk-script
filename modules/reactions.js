@@ -164,9 +164,9 @@ SalvaVK.modules.register({
         '.ar-nt-bd{position:absolute;right:-5px;bottom:-5px;width:28px;height:28px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
             'background:var(--vkui--color_background_content,#fff);border:1px solid rgba(128,128,128,.28);' +
             'box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 2px 5px rgba(0,0,0,.16);pointer-events:none}',
-        '.ar-nt-chip{display:inline-flex;align-items:center;gap:4px;padding:0 5px 0 3px;margin:0 1px;vertical-align:-5px;border-radius:2px;' +
-            'background:rgba(42,88,133,.08);color:var(--vkui--color_text_accent,#2a5885);font-weight:500;font-size:.95em;line-height:20px;white-space:nowrap}',
-        'html[data-ar-dark] .ar-nt-chip{background:rgba(113,170,235,.14);color:#a6d0ff}',
+        '.ar-nt-chip{white-space:nowrap}',
+        '.ar-nt-chip b{font-weight:600;color:var(--vkui--color_text_accent,#2a5885)}',
+        'html[data-ar-dark] .ar-nt-chip b{color:#a6d0ff}',
     ].join(''), 'vk-arx-css');
 
     // ---------- Reações ----------
@@ -1228,12 +1228,17 @@ SalvaVK.modules.register({
         return null;
     }
 
-    // "[ícone Nome]": pílula sutil com o ícone do VK e o nome da reação
+    // "[ícone nome]": ícone do VK + nome da reação em negrito e na cor de destaque
     function rxNtChip(r) {
         const chip = document.createElement('span');
         chip.className = 'ar-nt-chip';
-        chip.appendChild(rxIcon(r, 18));
-        chip.appendChild(document.createTextNode(r.name.toLocaleLowerCase('pt-BR')));
+        const ic = rxIcon(r, 20);
+        ic.style.display = 'inline-block';
+        ic.style.verticalAlign = '-5px';
+        ic.style.marginRight = '4px';
+        const name = document.createElement('b');
+        name.textContent = r.name.toLocaleLowerCase('pt-BR');
+        chip.append(ic, name);
         return chip;
     }
 
