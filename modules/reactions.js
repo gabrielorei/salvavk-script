@@ -190,7 +190,7 @@ SalvaVK.modules.register({
         { id: 26, name: 'Palmas', fb: '👏', img: 'https://sun1-23.userapi.com/s/v1/s2/Zzysh-8t4hyBvLI4C7FpXzZmHLBKqRjSZec1zvPK_MNwb8UMAiWKp-tmrUUANRSK-qZ4r9Fux7rnXCdajJvIfDs.svg', adj: 'translate(0,-2.5px)', pillClip: 'inset(18% 0 0 0)', pillAdj: 'translate(0,-1.5px)' },
         { id: 19, name: 'Surpresa', fb: '😮', img: 'https://sun1-27.userapi.com/s/v1/s2/DJSrHsK6WIV2r-SO4_ef57sZdu2m4eDeAeSYla8HNSh4t3TP44BDnjuIvjd4wejt_mwFEdn-jvITLO-Fd571bF0.svg' },
         { id: 39, name: 'Diabinho', fb: '😈', img: 'https://sun1-83.userapi.com/s/v1/s2/372vSKMBRDEIm366NF5tcZwx1iVVU3IDdsgFFHCH0J-f4OV7i01PiUc3CNEXqU02ZT0BFg4Oda8X-E1CE-cOFlQ.svg' },
-        { id: 22, name: 'Desdém', fb: '🙄', img: 'https://sun1-56.userapi.com/s/v1/s2/W4swqWNQcNOZoA7c9XxDAKvgkI_eTxdp3baixdxFKPZDjRuS-GXr9fb0Ha4OOgnZJvCXkYRvorQ0cuG3vw4Fss4.svg', noLike: true },
+        { id: 22, name: 'Desprezo', fb: '🙄', img: 'https://sun1-56.userapi.com/s/v1/s2/W4swqWNQcNOZoA7c9XxDAKvgkI_eTxdp3baixdxFKPZDjRuS-GXr9fb0Ha4OOgnZJvCXkYRvorQ0cuG3vw4Fss4.svg', noLike: true },
         { id: 17, name: 'Palhaço', fb: '🤡', img: 'https://sun9-9.userapi.com/s/v1/s2/PzDPR5_qLylXfFBmx78CLPec6VkqNGHVcV-2LYhsAhVUngr0I4P27UNIno0Kp42NKCGvovUbNmz4yqOgtFZoNlI.svg', noLike: true },
         { id: 7, name: 'Choro', fb: '😢', img: 'https://sun1-28.userapi.com/s/v1/s2/Ko6jOFBPclTnWinVZVRHcAjJVdUoVIPRyUviU3hH4K203aPIIvxARwZzhb9vMSgOr8RDejrvDoHg2rn2ZcIVnU8.svg', noLike: true },
         { id: 31, name: 'Raiva', fb: '🤬', img: 'https://sun1-89.userapi.com/s/v1/s2/ZOcBE3-24QPGljrDPEgj1AeVjzgssgxOqlAsZ5-vBJC8DkFtVip492RIVflYW5ePwnC98ucOHhqHwVDjmE262js.svg', noLike: true }
