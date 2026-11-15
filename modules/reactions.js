@@ -172,6 +172,7 @@ SalvaVK.modules.register({
             'box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 2px 5px rgba(0,0,0,.16);pointer-events:none}',
         '.ar-nt-chip{font-weight:550;color:var(--vkui--color_text_accent,#2a5885)}',
         'html[data-ar-dark] .ar-nt-chip{color:#a6d0ff}',
+        '.notifier_baloon .ar-nt-chip{color:#a6d0ff !important}',
     ].join(''), 'vk-arx-css');
 
     // ---------- Reações ----------
