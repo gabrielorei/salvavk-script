@@ -164,10 +164,8 @@ SalvaVK.modules.register({
         '.ar-nt-bd{position:absolute;right:-5px;bottom:-5px;width:28px;height:28px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
             'background:var(--vkui--color_background_content,#fff);border:1px solid rgba(128,128,128,.28);' +
             'box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 2px 5px rgba(0,0,0,.16);pointer-events:none}',
-        '.ar-nt-chip{display:inline;white-space:nowrap}',
-        '.ar-nt-chip img,.ar-nt-chip span{display:inline-block;vertical-align:-5px;margin-right:4px}',
-        '.ar-nt-chip b{font-weight:600;color:var(--vkui--color_text_accent,#2a5885)}',
-        'html[data-ar-dark] .ar-nt-chip b{color:#a6d0ff}',
+        '.ar-nt-chip{font-weight:600;color:var(--vkui--color_text_accent,#2a5885)}',
+        'html[data-ar-dark] .ar-nt-chip{color:#a6d0ff}',
     ].join(''), 'vk-arx-css');
 
     // ---------- Reações ----------
@@ -1229,17 +1227,18 @@ SalvaVK.modules.register({
         return null;
     }
 
-    // "[ícone nome]": ícone do VK + nome da reação em negrito e na cor de destaque
+    // "[ícone] nome": ícone centralizado na linha + nome em negrito e cor de destaque, tudo no mesmo fluxo do texto
     function rxNtChip(r) {
-        const chip = document.createElement('span');
-        chip.className = 'ar-nt-chip';
-        const name = document.createElement('b');
+        const wrap = document.createElement('span');
+        const ic = rxIcon(r, 20);   // mantém o clip/ajuste próprio de cada reação (inclusive as Palmas)
+        ic.style.display = 'inline-block';
+        ic.style.verticalAlign = 'middle';
+        ic.style.margin = '0 4px 0 1px';
+        const name = document.createElement('span');
+        name.className = 'ar-nt-chip';
         name.textContent = r.name.toLocaleLowerCase('pt-BR');
-        const ic = rxIcon(r, 20);
-        ic.style.transform = '';
-        ic.style.clipPath = '';
-        chip.append(ic, name);
-        return chip;
+        wrap.append(ic, name);
+        return wrap;
     }
 
     function rxNtAppendPhrase(target, reaction, many) {
