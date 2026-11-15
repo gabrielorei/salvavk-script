@@ -1345,7 +1345,10 @@ SalvaVK.modules.register({
         const wrap = document.createElement('span');
         wrap.style.fontWeight = '400';
         wrap.setAttribute('data-ar-nt', '1');
-        rxNtNodes(rs, tn.nodeValue).forEach(n => wrap.appendChild(n));
+        const gotPop = rs.filter(Boolean);
+        wrap.appendChild(document.createTextNode(gotPop.length === rs.length
+            ? ' ' + (rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne) + ' ' + RX_NT.tail + ' '
+            : tn.nodeValue));
         tn.replaceWith(wrap);
         const got = rs.filter(Boolean);
         if (got.length === rs.length) {
