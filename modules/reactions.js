@@ -24,8 +24,11 @@ SalvaVK.modules.register({
     const RX_FONT_PX = 13;          // tamanho dos números
     const RX_NO_HEART_TIP = true;   // o coração só abre o seletor de reações (sem o balão "X pessoas avaliaram")
     const RX_URL = 'https://salva-vk-api.salvavk.workers.dev/';
-    const RX_STEPS = [5000, 10000, 20000, 30000];   // intervalos da leitura (ms): sobe um degrau a cada RX_STEP_AFTER leituras iguais; qualquer mudança volta ao primeiro
+    const RX_STEPS = [5000, 10000, 20000, 30000, 60000];   // intervalos da leitura (ms): sobe um degrau a cada RX_STEP_AFTER leituras iguais
     const RX_STEP_AFTER = 2;
+    const RX_CHANGE_STEP = 1;       // degrau para onde a leitura volta quando OUTRAS pessoas mudam algo (0 = volta a 5 s, como na v6.33). Ação sua e troca de página sempre voltam a 5 s
+    const RX_IDLE_AFTER_MS = 2 * 60 * 1000;   // sem mouse/teclado/rolagem/toque por esse tempo = aba parada (ociosa)
+    const RX_IDLE_POLL_MS = 60000;  // aba parada: a leitura nunca fica mais frequente que isso; ao voltar a mexer, lê na hora
     const RX_MIN_GAP_MS = 2000;     // intervalo mínimo entre duas leituras, mesmo as forçadas
     const RX_FULL_EVERY_MS = 10 * 60 * 1000;   // leitura completa de tempos em tempos (corrige deriva)
     const RX_HIDDEN_POLL_MS = 0;    // aba escondida: 0 = não lê (lê na hora ao voltar); ou um intervalo em ms
@@ -36,8 +39,9 @@ SalvaVK.modules.register({
     const RX_NT_POP_RETRY_MS = [1200, 2000, 3000, 4000];   // pop-up: se a reação ainda não chegou ao banco, tenta de novo nesses intervalos
     const RX_NT_LIST_RETRY_MS = [4000, 10000, 30000];      // janela: idem; esgotadas, só olha de novo a cada 2 min
     const RX_NT_MIRROR_DAYS = 3;                // espelho local: reações dos últimos N dias
-    const RX_NT_MIRROR_EVERY_MS = 60000;        // atualização do espelho (só o que mudou); 0 = desliga
+    const RX_NT_MIRROR_EVERY_MS = 120000;       // atualização do espelho (só o que mudou); 0 = desliga
     const RX_NT_MIRROR_LIST_MS = 30000;         // idem, com a janela de notificações aberta
+    const RX_NT_MIRROR_IDLE_MS = 300000;        // idem, com a aba parada (ociosa)
     const RX_NT = { title: 'Alguém Reagiu ao Seu Comentário', verbOne: 'reagiu', verbMany: 'reagiram', with: 'com', tail: 'ao seu comentário' };
     const RX_NT_LIKE_RE = /(curti|like|оцени|понрав)[\s\S]*?(coment|comment|комментар)/i;   // "curtiu seu comentário" (pt, en, ru)
     // ========================
@@ -378,13 +382,25 @@ SalvaVK.modules.register({
         const d = rxApplyRows(rows);
         if (d === rx.digest) {
             if (++rx.same >= RX_STEP_AFTER && rx.step < RX_STEPS.length - 1) { rx.step++; rx.same = 0; }
-        } else { rx.step = 0; rx.same = 0; rx.digest = d; }
+        } else { rx.step = rx.force ? 0 : Math.min(RX_CHANGE_STEP, RX_STEPS.length - 1); rx.same = 0; rx.digest = d; }   // leitura forçada (sua ação/troca de página) = 5 s; mudança de terceiros = RX_CHANGE_STEP
         rx.force = false;
         rxSync();
     }
 
     function rxBoost() { rx.step = 0; rx.same = 0; rx.force = true; }
     document.addEventListener('visibilitychange', () => { if (!document.hidden) rxBoost(); });
+
+    // Ociosidade: sem interação por RX_IDLE_AFTER_MS, a leitura e o espelho espaçam; ao voltar a mexer, lê na hora.
+    let rxLastActive = Date.now();
+    const rxIdle = () => Date.now() - rxLastActive > RX_IDLE_AFTER_MS;
+    function rxActivity() {
+        const wasIdle = rxIdle();
+        rxLastActive = Date.now();
+        if (wasIdle) rxBoost();
+    }
+    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'mousemove', 'scroll'].forEach(ev => {
+        try { document.addEventListener(ev, rxActivity, { passive: true, capture: true }); } catch (e) { /* ignora */ }
+    });
 
     // Outra aba (visível) acabou de ler a mesma faixa: aproveita, sem repetir a consulta
     function rxAdoptShared(key, want) {
@@ -477,7 +493,7 @@ SalvaVK.modules.register({
         const now = Date.now(), fxKey = want.fx.join(',');
         const changed = rx.sentLo !== want.lo || rx.sentFx !== fxKey;   // outra página ou destaque novo
         if (changed) { rx.force = true; rx.step = 0; rx.same = 0; }
-        const interval = document.hidden ? RX_HIDDEN_POLL_MS : RX_STEPS[rx.step];
+        const interval = document.hidden ? RX_HIDDEN_POLL_MS : (rxIdle() ? Math.max(RX_STEPS[rx.step], RX_IDLE_POLL_MS) : RX_STEPS[rx.step]);
         const due = now - rx.last >= interval;
         const forced = rx.force && (changed || now - rx.last >= RX_MIN_GAP_MS);   // troca de página ignora o intervalo mínimo
         if (!due && !forced) return;
@@ -1077,6 +1093,7 @@ SalvaVK.modules.register({
     // Guardado no localStorage e atualizado só com o que mudou (delta): a janela de notificações abre já resolvida, sem "piscar" item por item.
     const RX_NT_MIRROR_KEY = 'vk_arx_nt_mirror_v1';
     const rxNtMirror = new Map();
+    const RX_NT_MIRROR_AT_KEY = 'vk_arx_nt_mirror_at_v1';   // hora da última atualização bem-sucedida do espelho (compartilhada entre abas)
     let rxNtCursor = null, rxNtMirrorAt = 0, rxNtMirrorBusy = false, rxNtSavedAt = 0;
 
     function rxNtEntry(k) {
@@ -1096,6 +1113,9 @@ SalvaVK.modules.register({
             s.r.forEach(a => rxNtMirrorSet(a[0], a[1], a[2], a[3], a[4], a[5]));
             rxNtCursor = s.c || null;
             if (Array.isArray(s.f)) s.f.forEach(k => { rxNtEntry(k).ft = 1; });
+            // Espelho salvo há pouco (por esta ou outra aba): não refaz a consulta só porque a página foi recarregada.
+            const at = Number(LS.get(RX_NT_MIRROR_AT_KEY));
+            if (Number.isFinite(at) && at <= Date.now() && Date.now() - at < RX_NT_MIRROR_EVERY_MS && rxNtCursor) rxNtMirrorAt = at;
         }
     }
     function rxNtMirrorSave() {
@@ -1133,6 +1153,7 @@ SalvaVK.modules.register({
             }
             rxNtCursor = since;
             if (n || reset) rxNtMirrorSave();
+            LS.set(RX_NT_MIRROR_AT_KEY, String(Date.now()));
             if (n) {
                 // O espelho mudou: invalida a lista preparada para reconstruí-la já, sem nova consulta ao D1.
                 rxNtOwnAt = 0;
@@ -2083,7 +2104,8 @@ SalvaVK.modules.register({
         rxNtBusy = true;
         try {
             const listOpen = !!document.querySelector('[data-testid="notification-text"]');
-            if (!document.hidden && RX_NT_MIRROR_EVERY_MS && Date.now() - rxNtMirrorAt >= (listOpen ? RX_NT_MIRROR_LIST_MS : RX_NT_MIRROR_EVERY_MS)) await rxNtMirrorRefresh();
+            const mirrorEvery = listOpen ? RX_NT_MIRROR_LIST_MS : (rxIdle() ? RX_NT_MIRROR_IDLE_MS : RX_NT_MIRROR_EVERY_MS);
+            if (!document.hidden && RX_NT_MIRROR_EVERY_MS && Date.now() - rxNtMirrorAt >= mirrorEvery) await rxNtMirrorRefresh();
             const pops = [...document.querySelectorAll('.notifier_baloon[class*="notifier_type_like_topic_comment"]')];
             await Promise.all(pops.map(p => rxNtPopup(p).catch(() => {})));
             if (listOpen) await rxNtListTick();
