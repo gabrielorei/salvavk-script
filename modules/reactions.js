@@ -1232,7 +1232,7 @@ SalvaVK.modules.register({
         const wrap = document.createElement('span');
         const ic = rxIcon(r, 20);   // mantém o clip/ajuste próprio de cada reação (inclusive as Palmas)
         ic.style.display = 'inline-block';
-        ic.style.verticalAlign = 'middle';
+        ic.style.verticalAlign = -4px;
         ic.style.margin = '0 4px 0 1px';
         const name = document.createElement('span');
         name.className = 'ar-nt-chip';
