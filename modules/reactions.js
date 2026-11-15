@@ -161,8 +161,9 @@ SalvaVK.modules.register({
         '[data-testid="comment-like"] span *{color:inherit !important}',
         // janela de notificações
         '[data-ar-nt-hide]{display:none !important}[data-ar-nt-host]{position:relative}',
-        '.ar-nt-bd{position:absolute;right:-3px;bottom:-3px;width:22px;height:22px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
-            'background:var(--vkui--color_background_content,#fff);box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 1px 3px rgba(0,0,0,.18);pointer-events:none}'
+        '.ar-nt-bd{position:absolute;right:-5px;bottom:-5px;width:28px;height:28px;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
+            'background:var(--vkui--color_background_content,#fff);border:1px solid rgba(128,128,128,.28);' +
+            'box-shadow:0 0 0 2px var(--vkui--color_background_content,#fff),0 2px 5px rgba(0,0,0,.16);pointer-events:none}'
     ].join(''), 'vk-arx-css');
 
     // ---------- Reações ----------
@@ -1227,9 +1228,9 @@ SalvaVK.modules.register({
     function rxNtAppendPhrase(target, reaction, many) {
         target.style.fontWeight = '400';
         const T = s => document.createTextNode(s);
-        const im = rxIcon(reaction, 16);
+        const im = rxIcon(reaction, 20);
         im.style.display = 'inline-block';
-        im.style.verticalAlign = '-3px';
+        im.style.verticalAlign = '-5px';
         target.append(T((many ? 'reagiram' : 'reagiu') + ' com '), im, T(' ao seu comentário'));
     }
 
@@ -1237,16 +1238,14 @@ SalvaVK.modules.register({
         const got = rs.filter(Boolean), uniq = [...new Map(got.map(r => [Number(r.id), r])).values()];
         const T = s => document.createTextNode(s);
         const ic = r => {
-            const im = rxIcon(r, 16);
+            const im = rxIcon(r, 20);
             im.style.display = 'inline-block';
-            im.style.verticalAlign = '-3px';
+            im.style.verticalAlign = '-5px';
             return im;
         };
-        // todos reagiram e com a mesma reação: "reagiu com [ícone] ao seu comentário"
         if (got.length === rs.length && uniq.length === 1) {
             return [T(' ' + (rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne) + ' com '), ic(uniq[0]), T(' ' + RX_NT.tail + ' ')];
         }
-        // reações diferentes (ou só alguns reagiram): texto + ícones em sequência
         const out = [T(got.length === rs.length ? ' ' + (rs.length > 1 ? RX_NT.verbMany : RX_NT.verbOne) + ' ' + RX_NT.tail + ' ' : (orig || '') + ' ')];
         uniq.forEach(r => { out.push(ic(r)); out.push(T(' ')); });
         return out;
@@ -1412,7 +1411,7 @@ SalvaVK.modules.register({
         const bd = document.createElement('span');
         bd.className = 'ar-nt-bd';
         bd.setAttribute('data-sig', h);
-        bd.appendChild(rxIcon(r, 16));
+        bd.appendChild(rxIcon(r, 20));
         host.appendChild(bd);
     }
     
@@ -1955,7 +1954,7 @@ SalvaVK.modules.register({
                 const badge = document.createElement('span');
                 badge.className = 'ar-nt-bd';
                 badge.setAttribute('data-sig', key + '-' + group.emoji);
-                badge.appendChild(rxIcon(group.reaction, 16));
+                badge.appendChild(rxIcon(group.reaction, 20));
                 avatarHost.appendChild(badge);
             }
         });
