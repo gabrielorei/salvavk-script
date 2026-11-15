@@ -24,11 +24,14 @@ SalvaVK.modules.register({
     const RX_FONT_PX = 13;          // tamanho dos números
     const RX_NO_HEART_TIP = true;   // o coração só abre o seletor de reações (sem o balão "X pessoas avaliaram")
     const RX_URL = 'https://salva-vk-api.salvavk.workers.dev/';
-    const RX_STEPS = [5000, 15000, 30000, 60000, 120000, 180000];   // intervalos da leitura (ms): sobe um degrau a cada RX_STEP_AFTER leituras iguais
-    const RX_STEP_AFTER = 2;
+    const RX_STEPS = [5000, 15000, 300000];   // intervalos da leitura (ms): sobe um degrau a cada RX_STEP_AFTER leituras iguais
+    const RX_STEP_AFTER = 1;
+    const RX_NUDGE_GAP_MS = 30000;   // gatilhos (mouse, volta à aba): no máximo 1 leitura a cada 30 s
+    const RX_RETURN_MS = 60000;      // voltar à aba só lê se ficou fora mais que isso
+    const RX_GROW_GAP_MS = 15000;    // comentários novos na tela: no máximo 1 leitura a cada 15 s
     const RX_CHANGE_STEP = 1;       // degrau para onde a leitura volta quando OUTRAS pessoas mudam algo (0 = volta a 5 s, como na v6.33). Ação sua e troca de página sempre voltam a 5 s
     const RX_IDLE_AFTER_MS = 2 * 60 * 1000;   // sem mouse/teclado/rolagem/toque por esse tempo = aba parada (ociosa)
-    const RX_IDLE_POLL_MS = 180000;  // aba parada: a leitura nunca fica mais frequente que isso; ao voltar a mexer, lê na hora
+    const RX_IDLE_POLL_MS = 900000;  // aba parada: a leitura nunca fica mais frequente que isso; ao voltar a mexer, lê na hora
     const RX_MIN_GAP_MS = 2000;     // intervalo mínimo entre duas leituras, mesmo as forçadas
     const RX_FULL_EVERY_MS = 10 * 60 * 1000;   // leitura completa de tempos em tempos (corrige deriva)
     const RX_HIDDEN_POLL_MS = 0;    // aba escondida: 0 = não lê (lê na hora ao voltar); ou um intervalo em ms
@@ -39,9 +42,9 @@ SalvaVK.modules.register({
     const RX_NT_POP_RETRY_MS = [1200, 2000, 3000, 4000];   // pop-up: se a reação ainda não chegou ao banco, tenta de novo nesses intervalos
     const RX_NT_LIST_RETRY_MS = [4000, 10000, 30000];      // janela: idem; esgotadas, só olha de novo a cada 2 min
     const RX_NT_MIRROR_DAYS = 3;                // espelho local: reações dos últimos N dias
-    const RX_NT_MIRROR_EVERY_MS = 120000;       // atualização do espelho (só o que mudou); 0 = desliga
+    const RX_NT_MIRROR_EVERY_MS = 300000;       // atualização do espelho (só o que mudou); 0 = desliga
     const RX_NT_MIRROR_LIST_MS = 30000;         // idem, com a janela de notificações aberta
-    const RX_NT_MIRROR_IDLE_MS = 300000;        // idem, com a aba parada (ociosa)
+    const RX_NT_MIRROR_IDLE_MS = 900000;        // idem, com a aba parada (ociosa)
     const RX_NAV_SETTLE_MS = 1500;           // troca de página: espera a navegação estabilizar antes de ler
     const RX_PAGE_CACHE_MS = 10 * 60 * 1000; // validade do cache por página (igual ao RX_FULL_EVERY_MS)
     const RX_PAGE_CACHE_MAX = 8;             // páginas guardadas por tópico
@@ -388,13 +391,22 @@ SalvaVK.modules.register({
         const d = rxApplyRows(rows);
         if (d === rx.digest) {
             if (++rx.same >= RX_STEP_AFTER && rx.step < RX_STEPS.length - 1) { rx.step++; rx.same = 0; }
-        } else { rx.step = rx.force ? 0 : Math.min(RX_CHANGE_STEP, RX_STEPS.length - 1); rx.same = 0; rx.digest = d; }   // leitura forçada (sua ação/troca de página) = 5 s; mudança de terceiros = RX_CHANGE_STEP
+        } else { rx.step = Math.min(RX_CHANGE_STEP, RX_STEPS.length - 1); rx.same = 0; rx.digest = d; }   // leitura forçada (sua ação/troca de página) = 5 s; mudança de terceiros = RX_CHANGE_STEP
         rx.force = false;
         rxSync();
     }
 
     function rxBoost() { rx.step = 0; rx.same = 0; rx.force = true; }
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) rxBoost(); });
+    // Uma leitura imediata, sem reiniciar a escada de intervalos; limitada por RX_NUDGE_GAP_MS.
+    function rxNudge(skipGap) {
+        if (!skipGap && Date.now() - rx.last < RX_NUDGE_GAP_MS) return;
+        rx.force = true;
+    }
+    let rxHiddenAt = 0;
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) { rxHiddenAt = Date.now(); return; }
+        if (rxHiddenAt && Date.now() - rxHiddenAt >= RX_RETURN_MS) rxNudge(true);
+    });
 
     // Ociosidade: sem interação por RX_IDLE_AFTER_MS, a leitura e o espelho espaçam; ao voltar a mexer, lê na hora.
     let rxLastActive = Date.now();
@@ -402,7 +414,7 @@ SalvaVK.modules.register({
     function rxActivity() {
         const wasIdle = rxIdle();
         rxLastActive = Date.now();
-        if (wasIdle) rxBoost();
+        if (wasIdle) rxNudge();
     }
     ['pointerdown', 'keydown', 'wheel', 'touchstart', 'mousemove', 'scroll'].forEach(ev => {
         try { document.addEventListener(ev, rxActivity, { passive: true, capture: true }); } catch (e) { /* ignora */ }
@@ -507,8 +519,8 @@ SalvaVK.modules.register({
         rx.sentLo = want.lo; rx.sentHi = want.hi; rx.sentFx = fxKey;
         rx.force = true;
         rxIngest(rxStoreRows());   // desenha o que estava guardado
-        rx.step = 0; rx.same = 0;
-        rx.last = Date.now() - RX_STEPS[0] + RX_NAV_SETTLE_MS;   // o delta sai depois de estabilizar
+        rx.step = RX_STEPS.length - 1; rx.same = 0; rx.force = true;   // uma leitura de delta depois de estabilizar; depois, leitura lenta
+        rx.last = Date.now() - RX_MIN_GAP_MS + RX_NAV_SETTLE_MS;
         rxLog('Cache de página: ' + winKey + ' restaurada (' + rx.store.size + ' linhas); delta em ~' + RX_NAV_SETTLE_MS / 1000 + ' s');
         return true;
     }
@@ -547,7 +559,8 @@ SalvaVK.modules.register({
     
         const interval = document.hidden ? RX_HIDDEN_POLL_MS : (rxIdle() ? Math.max(RX_STEPS[rx.step], RX_IDLE_POLL_MS) : RX_STEPS[rx.step]);
         const due = now - rx.last >= interval;
-        const forced = rx.force && (changed || now - rx.last >= RX_MIN_GAP_MS);
+        const grew = !changed && rx.sentHi !== undefined && rx.sentHi !== want.hi && now - rx.last >= RX_GROW_GAP_MS;   // apareceram comentários novos
+    const forced = grew || (rx.force && (changed || now - rx.last >= RX_MIN_GAP_MS));
         if (!due && !forced) return;
         rx.last = now;
         const full = changed || rx.cursor == null || rx.sentHi !== want.hi || now - rx.fullAt > RX_FULL_EVERY_MS;
@@ -1038,7 +1051,7 @@ SalvaVK.modules.register({
         }
         const t = rxLikeTarget(e);
         if (!t) return;
-        if (RX_NO_HEART_TIP) e.stopPropagation();   // sem o balão "X pessoas avaliaram" (do VK ou do Salva VK)
+        rxNudge(); if (RX_NO_HEART_TIP) e.stopPropagation();   // sem o balão "X pessoas avaliaram" (do VK ou do Salva VK)
         if (t === rxPickFor) { clearTimeout(rxHideTimer); return; }
         clearTimeout(rxShowTimer);
         rxShowTimer = setTimeout(() => rxShowPicker(t), RX_HOVER_MS);
