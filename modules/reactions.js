@@ -2,7 +2,7 @@
 // Extraído do núcleo v6.33; usa somente a API pública SalvaVK v1.
 SalvaVK.modules.register({
     id: 'reactions',
-    version: '1.0.1',
+    version: '1.0.0',
     apiVersion: 1,
     start(api) {
         const LS = api.storage;
@@ -2211,6 +2211,6 @@ SalvaVK.modules.register({
             const now = Date.now();
             jobs.forEach(j => { if (now - j[2] >= j[1]) { j[2] = now; safe(j[0]); } });
         }, 100);
-        rxLog('Módulo de reações iniciado (v1.0.1).');
+        rxLog('Módulo de reações iniciado (v1.0.0).');
     }
 });
