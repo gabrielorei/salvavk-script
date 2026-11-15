@@ -124,6 +124,7 @@
     const RELOAD_WHEN_NO_QUERY = true; // sem consulta (token perdido) e a renovação não resolveu: recarrega a página sozinho (com offset=last se você acompanhava o fim), no lugar do F5 manual
     const NO_QUERY_RELOAD_MS = 10000;  // quanto tempo sem consulta antes de recarregar
     const RENEW_RETRY_MS = 20000;    // espera mínima entre duas tentativas automáticas de renovar a consulta
+    const NATIVE_LIKE_SYNC = true;   // atualiza o número de curtidas dos comentários nativos com os dados que a consulta já traz (sem requisição extra)
     const SHARPEN_IMAGES = true;     // troca a miniatura pequena do VK por um tamanho que cubra o espaço exibido (imagens mais nítidas)
     const AUTO_BUILD_QUERY = true;   // monta a consulta sozinho a partir de outras chamadas do VK (sem precisar clicar)
     const NOTIFICATIONS_SAME_TAB = false; // notificações abrem o tópico em uma nova aba
@@ -5740,6 +5741,57 @@
     window.addEventListener('popstate', () => navChanged('voltar/avançar'));
     setInterval(() => { if (location.pathname !== navPath) { navPath = location.pathname; navChanged('outro tópico'); } }, 150);
 
+    // ---------- Curtidas dos comentários NATIVOS ----------
+    // Só mexe no TEXTO do número (nodeValue do nó que o React já tem), sem trocar elementos.
+    // Ignora o .ar-rx-hc do módulo de reações e comentários em que você clicou há pouco (o VK já mostrou o valor otimista).
+    document.addEventListener('click', e => {
+        const t = e.target && e.target.closest && e.target.closest('[data-testid="comment-like"]');
+        const c = t && t.closest(COMMENT_SEL);
+        if (c) c.__arLikeClick = Date.now();
+    }, true);
+
+    function nativeCountEl(btn) {
+        return [btn].concat([...btn.querySelectorAll('*')])
+            .filter(e => !e.children.length && !e.classList.contains('ar-rx-hc') && /^\d+$/.test((e.textContent || '').trim())).pop() || null;
+    }
+
+    function syncNativeLikes(items) {
+        if (!NATIVE_LIKE_SYNC) return;
+        const now = Date.now();
+        const cards = new Map();
+        commentNodes(document).forEach(n => {
+            if (!n.hasAttribute('data-ar-new') && !n.hasAttribute('data-ar-dup') && !n.hasAttribute('data-ar-deleted')) cards.set(String(numId(n)), n);
+        });
+        items.forEach(it => {
+            if (!it.likes) return;
+            const card = cards.get(String(it.id));
+            if (!card || now - (card.__arLikeClick || 0) < 4000) return;
+            const lb = findLikeBox(card);
+            if (!lb) return;
+            const want = it.likes.count || 0;
+            let ce = nativeCountEl(lb);
+            const cur = ce ? (parseInt(ce.textContent, 10) || 0) : 0;
+            if (cur === want) return;
+
+            if (!ce) {   // comentário que não tinha nenhuma curtida: cria o número
+                if (!want) return;
+                ce = countProto ? countProto.cloneNode(true) : mk('font-size:13px;color:' + LIKE_COUNT_COLOR + ';', null, 'span');
+                const svg = lb.querySelector('svg:not([data-ar-hov])');
+                (svg && svg.parentElement ? svg.parentElement : lb).appendChild(ce);
+                ce.setAttribute('data-ar-lc', '1');
+            }
+            const tn = [...ce.childNodes].find(n => n.nodeType === 3);
+            if (tn) tn.nodeValue = String(want); else ce.textContent = String(want);
+
+            // zerou: esconde em vez de remover (remover nó do React pode dar erro depois)
+            if (!want) { ce.style.display = 'none'; ce.setAttribute('data-ar-lz', '1'); }
+            else if (ce.hasAttribute('data-ar-lz')) { ce.style.removeProperty('display'); ce.removeAttribute('data-ar-lz'); }
+
+            keepLikeVisible(card, lb, want > 0);
+            log('Curtidas nativas do comentário', it.id, ':', cur, '→', want);
+        });
+    }
+
     // ---------- 5) Ciclo principal ----------
     let busy = false;
     let cycles = 0;
@@ -6082,6 +6134,8 @@
                 const key = (it.likes.count || 0) + '|' + (it.likes.user_likes ? 1 : 0);
                 if (n.getAttribute('data-ar-likes') !== key) setLikeUI(n, it.likes.count || 0, !!it.likes.user_likes);
             });
+
+            syncNativeLikes(items);
 
             await ensureOtherWindows(pageSize);
             dedupeNew(itemIds, outSigs);
@@ -6491,6 +6545,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         const MANIFEST_URL = 'https://salva-vk-api.salvavk.workers.dev/modules/manifest.json';
         const CACHE_KEY = 'SalvaVK_ModuleSnapshot_v1';
         const MAX_MANIFEST_BYTES = 128 * 1024, MAX_MODULE_BYTES = 1536 * 1024;
+        // Enquanto o snapshot em cache for recente, o carregador não vai à rede (zero requisições por página).
+        // Depois disso, confere só o manifesto e baixa apenas os módulos cujo SHA-256 mudou.
+        const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
         let state = 'idle', lastError = null, loadedRelease = null, loadedCount = 0, pending = null, sourceMode = null;
 
         function byteLength(value) { return new TextEncoder().encode(value).length; }
@@ -6547,13 +6604,23 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             }
             return snapshot;
         }
-        async function downloadSnapshot() {
+        // Fonte já verificada no cache local para este módulo (mesmo SHA-256 do manifesto), ou null.
+        async function reusableSource(cached, item) {
+            const entry = cached && cached.sources && cached.sources[item.id];
+            const want = String(item.sha256 || '').toLowerCase();
+            if (!entry || typeof entry.source !== 'string' || String(entry.sha256 || '').toLowerCase() !== want) return null;
+            if (byteLength(entry.source) > MAX_MODULE_BYTES || await digest(entry.source) !== want) return null;
+            return entry.source;
+        }
+        async function downloadSnapshot(cached) {
             const response = await SalvaVK.network.request({ url: MANIFEST_URL, method: 'GET', timeout: 20000, headers: { 'Cache-Control': 'no-cache' } });
             const raw = String(response.responseText || '');
             if (!raw || byteLength(raw) > MAX_MANIFEST_BYTES) throw new Error('Manifesto vazio ou excede o limite');
             const manifest = validateManifest(JSON.parse(raw));
             const sources = Object.create(null);
             for (const item of manifest.modules) {
+                const kept = await reusableSource(cached, item);
+                if (kept != null) { sources[item.id] = { version: item.version, sha256: item.sha256.toLowerCase(), source: kept }; continue; }
                 const result = await SalvaVK.network.request({ url: item.url, method: 'GET', timeout: 30000, headers: { 'Cache-Control': 'no-cache' } });
                 const source = String(result.responseText || '');
                 if (!source || byteLength(source) > MAX_MODULE_BYTES) throw new Error('Módulo vazio ou excede o limite: ' + item.id);
@@ -6564,11 +6631,15 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             return { savedAt: Date.now(), manifest, sources };
         }
         // Caminho único de seleção: rede primeiro; em caso de falha, valida o último snapshot íntegro.
-        async function resolveSnapshot(download = downloadSnapshot) {
+        async function resolveSnapshot(download = downloadSnapshot, force = false) {
+            const cached = readCache();
+            const age = cached && typeof cached.savedAt === 'number' ? Date.now() - cached.savedAt : Infinity;
+            if (!force && download === downloadSnapshot && age >= 0 && age < SNAPSHOT_TTL_MS) {
+                try { return { snapshot: await verifySnapshot(cached), mode: 'cache', error: null }; } catch (e) { /* cache inválido: segue para a rede */ }
+            }
             try {
-                return { snapshot: await download(), mode: 'network', error: null };
+                return { snapshot: await download(cached), mode: 'network', error: null };
             } catch (networkError) {
-                const cached = readCache();
                 if (!cached) throw networkError;
                 return {
                     snapshot: await verifySnapshot(cached),
@@ -6599,7 +6670,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             if (pending && !force) return pending;
             pending = (async () => {
                 state = 'loading'; lastError = null;
-                const resolved = await resolveSnapshot();
+                const resolved = await resolveSnapshot(downloadSnapshot, force);
                 const snapshot = resolved.snapshot, mode = resolved.mode;
                 const count = await executeSnapshot(snapshot);
                 if (mode === 'network') writeCache(snapshot);
