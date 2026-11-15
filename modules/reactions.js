@@ -1234,7 +1234,9 @@ SalvaVK.modules.register({
         chip.className = 'ar-nt-chip';
         const name = document.createElement('b');
         name.textContent = r.name.toLocaleLowerCase('pt-BR');
-        chip.append(rxIcon(r, 20), name);
+        const ic = rxIcon(r, 20);
+        ic.style.transform = '';   // tira o ajuste de pílula (pillAdj), que aqui desalinharia
+        chip.append(ic, name);
         return chip;
     }
 
