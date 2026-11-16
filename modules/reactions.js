@@ -2,7 +2,7 @@
 // Extraído do núcleo v6.33; usa somente a API pública SalvaVK v1.
 SalvaVK.modules.register({
     id: 'reactions',
-    version: '1.0.0',
+    version: '1.0.1',
     apiVersion: 1,
     start(api) {
         const LS = api.storage;
@@ -1420,14 +1420,16 @@ SalvaVK.modules.register({
         // Ids que o HTML da notificação traz: o link da notificação (?post=) e os avatares, que podem ser /idNNN, /apelido ou só o nome (alt)
         function rxNtListIds(t, row) {
             let key = null, cid = null;
-            const a = t.closest('a[href*="post="]');
+            // O VK passou a envolver só o título no link; o texto fica ao lado. Procura o link na linha inteira.
+            const wrap = t.closest('a[href*="post="]');
+            const a = wrap || (row && row.querySelector('a[href*="post="]'));
             if (a) {
                 try {
                     const u = new URL(a.href, location.href), m = u.pathname.match(TOPIC_RE), n = Number(u.searchParams.get('post'));
                     if (m && Number.isFinite(n)) { key = m[1] + '_' + m[2]; cid = n; }
                 } catch (e) {}
             }
-            const scope = a || row;
+            const scope = wrap || row;
             const links = [...scope.querySelectorAll('a[data-testid="notification-avatar"][href]')];
             const ident = links.length
             ? links.map(x => {
@@ -1651,9 +1653,9 @@ SalvaVK.modules.register({
             const texts = [...document.querySelectorAll('[data-testid="notification-text"]')]
             .filter(t => !t.closest('[data-ar-nt-own]'));
             const candidates = texts.map(text => {
-                const link = text.closest('a[href*="post="]');
-                const item = link && link.closest('[data-testid^="notification-item-"]');
-                if (!item || !item.parentElement) return null;
+                const item = text.closest('[data-testid^="notification-item-"]');
+                const link = item && item.querySelector('a[href*="post="]');
+                if (!link || !item.parentElement) return null;
 
                 // Nunca usar notificações agrupadas ("Fulano e mais N"): elas têm pilha de avatares
                 // de terceiros e não representam o formato individual que precisamos clonar.
