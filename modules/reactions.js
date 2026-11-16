@@ -2,7 +2,7 @@
 // Extraído do núcleo v6.33; usa somente a API pública SalvaVK v1.
 SalvaVK.modules.register({
     id: 'reactions',
-    version: '1.0.1',
+    version: '1.0.0',
     apiVersion: 1,
     start(api) {
         const LS = api.storage;
@@ -36,6 +36,9 @@ SalvaVK.modules.register({
         const RX_FULL_EVERY_MS = 10 * 60 * 1000;   // leitura completa de tempos em tempos (corrige deriva)
         const RX_HIDDEN_POLL_MS = 0;    // aba escondida: 0 = não lê (lê na hora ao voltar); ou um intervalo em ms
         const RX_HOVER_MS = 350;        // tempo com o mouse no coração até abrir o seletor
+        const RX_HINT_MAX = 5;          // aviso "Quem curtiu? Clique no número" nas primeiras N aberturas da barra (0 = desligado). Some antes se a pessoa clicar num número de curtidas
+        const RX_HINT_KEY = 'vk_arx_hint_v1';
+        const RX_PICK_ICON_PX = 25;     // tamanho dos ícones na barra de reações
         const RX_LOCAL_MS = 8000;       // quanto tempo a sua reação "vale" na tela antes de o servidor confirmar
         const RX_GAP_IDS = 1000000;     // ids de comentários com distância maior que isso não contam como a mesma janela (ignora id provisório)
         const RX_NT_NEGATIVE = false;   // false = só reações positivas geram notificação (as negativas não dão curtida no VK)
@@ -154,10 +157,11 @@ SalvaVK.modules.register({
             '.ar-rx-x{appearance:none;cursor:pointer;display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;opacity:.6;font-size:15px;transition:background-color .12s,opacity .12s}',
             '.ar-rx-x:hover{background:rgba(128,128,128,.2);opacity:1}',
             '[data-ar-top-clip] .ar-top-like-ov{gap:8px}',
-            '.ar-rx-opt{appearance:none;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:4px;margin:0;border:0;border-radius:10px;background:transparent;transition:transform .1s}',
+            '.ar-rx-opt{appearance:none;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:3px;margin:0;border:0;border-radius:10px;background:transparent;transition:transform .1s}',
             '.ar-rx-opt:hover{transform:scale(1.22);background:rgba(128,128,128,.15)}',
             '.ar-rx-opt.ar-rx-mine{background:rgba(42,88,133,.18)}',
-            '#ar-rx-picker{position:fixed;z-index:100000;display:none;gap:2px;padding:4px 6px;border-radius:16px;background:var(--vkui--color_background_content,#fff);box-shadow:0 6px 24px rgba(0,0,0,.28);border:1px solid rgba(128,128,128,.35)}',
+            '#ar-rx-picker .ar-rx-prow{display:flex;gap:1px}#ar-rx-picker .ar-rx-hint{margin:1px 6px 2px 0;text-align:right;white-space:nowrap;font-size:11px;line-height:14px;color:var(--vkui--color_text_secondary,#818c99);pointer-events:none}',
+            '#ar-rx-picker{position:fixed;z-index:100000;display:none;flex-direction:column;padding:4px 6px;border-radius:16px;background:var(--vkui--color_background_content,#fff);box-shadow:0 6px 24px rgba(0,0,0,.28);border:1px solid rgba(128,128,128,.35)}',
             // tamanho do ícone/número do coração nativo
             lk('') + '{margin:-' + Math.round((RX_ICON_PX - 16) / 2) + 'px 0}',
             lk(' svg') + '{width:' + RX_ICON_PX + 'px !important;height:' + RX_ICON_PX + 'px !important}',
@@ -909,6 +913,7 @@ SalvaVK.modules.register({
         // startId: id de uma reação abre a aba dela; 1 (coração) abre a aba das curtidas nativas; outro valor abre "Todas".
         function rxOpenModal(cid, startId) {
             if (!Number.isFinite(cid)) return;
+            rxHintDone();
             const who = rx.who.get(cid) || {};
             const groups = RX_LIST.filter(r => r.id !== 1 && (who[r.id] || []).length).map(r => ({ r, ids: who[r.id] }));
             const all = [].concat(...groups.map(g => g.ids.map(id => ({ id, r: g.r }))));
@@ -994,6 +999,12 @@ SalvaVK.modules.register({
         // ---------- Seletor de reações ----------
         let rxPickEl = null, rxShowTimer = null, rxHideTimer = null, rxPickFor = null;
 
+        // Aviso "Quem curtiu?": conta as aberturas da barra e some depois de RX_HINT_MAX ou ao clicar num número de curtidas
+        function rxHintState() { try { return LS.json(RX_HINT_KEY, {}) || {}; } catch (e) { return {}; } }
+        function rxHintDone() {
+            try { const st = rxHintState(); if (!st.done) LS.setJson(RX_HINT_KEY, { n: Number(st.n) || 0, done: true }); } catch (e) {}
+        }
+
         function rxHidePicker(now) {
             clearTimeout(rxHideTimer);
             const f = () => { if (rxPickEl) rxPickEl.style.display = 'none'; rxPickFor = null; };
@@ -1012,20 +1023,42 @@ SalvaVK.modules.register({
                 document.body.appendChild(rxPickEl);
             }
             rxPickEl.textContent = '';
+            const newOpen = rxPickFor !== lb;
+            let showHint = false;
+            if (RX_HINT_MAX > 0) {
+                const st = rxHintState(), n = Number(st.n) || 0;
+                if (!st.done && n < RX_HINT_MAX) {
+                    showHint = true;
+                    if (newOpen) { try { LS.setJson(RX_HINT_KEY, { n: n + 1, done: false }); } catch (e) {} }
+                }
+            }
+            const prow = document.createElement('div');
+            prow.className = 'ar-rx-prow';
+            rxPickEl.appendChild(prow);
             RX_LIST.forEach(r => {
                 const b = document.createElement('button');
                 b.type = 'button';
                 const on = r.id === 1 ? (liked && !mine) : mine === String(r.id);
                 b.className = 'ar-rx-opt' + (on ? ' ar-rx-mine' : '');
                 b.title = r.name;
-                b.appendChild(rxIcon(r, 28));
+                b.appendChild(rxIcon(r, RX_PICK_ICON_PX));
                 b.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); rxHidePicker(true); rxChoose(card, r.id); });
-                rxPickEl.appendChild(b);
+                prow.appendChild(b);
             });
+            let hintArrow = null;
+            if (showHint) {
+                const hint = document.createElement('div');
+                hint.className = 'ar-rx-hint';
+                hint.appendChild(document.createTextNode('Clique no número ao lado da reação para ver quem curtiu '));
+                hintArrow = document.createElement('span');
+                hint.appendChild(hintArrow);
+                rxPickEl.appendChild(hint);
+            }
             rxPickEl.style.display = 'flex';
             const rc = lb.getBoundingClientRect(), w = rxPickEl.offsetWidth, h = rxPickEl.offsetHeight;
             let top = rc.top - h - 6;
             if (top < 8) top = rc.bottom + 6;
+            if (hintArrow) hintArrow.textContent = top > rc.top ? '\u2197' : '\u2198';   // o número fica à direita do coração: seta p/ baixo se a barra abriu acima, p/ cima se abriu abaixo
             rxPickEl.style.top = top + 'px';
             rxPickEl.style.left = Math.min(Math.max(8, rc.right - w), window.innerWidth - w - 8) + 'px';
             rxPickFor = lb;
