@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salva VK
 // @namespace    local.vk.autorefresh
-// @version      6.31
+// @version      6.32
 // @description  Salva VK: atualização de comentários, mídia, destaque e reações personalizadas
 // @match        https://vk.ru/*
 // @match        https://*.vk.ru/*
@@ -22,6 +22,7 @@
 // @connect      api.reidoscanais.cam
 // @connect      api.reidoscanais.my
 // @connect      reidoscanais.my
+// @connect      esportenacional.com
 // @connect      api.ppv.st
 // @connect      raw.githubusercontent.com
 // @connect      cdn.jsdelivr.net
@@ -159,6 +160,7 @@
     const TOP_LIKED_RECENT_LAST_N = 1000;  // tópico criado nos últimos ~6 meses (não antigo): só os últimos N posts contam (sem aviso no cartão)
     const TOP_LIKED_MAX_SCAN = 5000;       // máximo de comentários varridos por tópico
     const HLSJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js';   // para tocar as qualidades que o VK só entrega em HLS
+    const VK_VIDEO_EMBED = true;     // vídeo do VK sem MP4 direto (privado por hash, externo, só streaming): toca no player oficial do VK (video_ext.php) em vez de só mostrar o aviso
     const VK_VIDEO_HLS = true;       // acrescenta, na caixinha de qualidade, as resoluções que só existem em HLS (sem download direto)
     const TWEET_COLLAPSED_PX = 280;  // altura do tweet recolhido (tweets mais altos ganham o botão "Expandir"),
     const TWEET_VIDEO_WIDE_PX = 500;  // largura máxima do vídeo de tweet HORIZONTAL (16:9). O tweet em si continua com 360 px; vertical não muda
@@ -276,7 +278,7 @@
     const GIF_PLAY_FIX = true;    // clique no play passa a tocar o arquivo do GIF direto da API
     (function gifStyles() {
         if (!GIF_MAX_W_PX) return;
-        addStyle('[data-testid="comment-attachments"]:has([data-attachment-types~="doc"] [data-testid="primary-attachment"]){max-width:' + GIF_MAX_W_PX + 'px !important}', 'vk-ar-gif-style');
+        addStyle('[data-attachment-types~="doc"]:has([data-vkit-primary-attachment]){max-width:' + GIF_MAX_W_PX + 'px !important}', 'vk-ar-gif-style');
     })();
 
     function gifDocFor(el, label) {
@@ -310,8 +312,7 @@
 
     document.addEventListener('click', e => {
         if (!GIF_PLAY_FIX || e.button !== 0 || !e.isTrusted || !e.target.closest) return;
-        const t = e.target.closest('[data-attachment-types~="doc"] [data-testid="primary-attachment"]');
-        if (!t || t.__arGif || !/GIF/i.test(t.textContent || '')) return;
+        const t = e.target.closest('[data-attachment-types~="doc"] [data-vkit-primary-attachment], [data-attachment-types~="doc"] [data-testid="primary-attachment"]');        if (!t || t.__arGif || !/GIF/i.test(t.textContent || '')) return;
         const d = gifDocFor(t, t.textContent);
         if (!d) return;   // nenhum doc do cache bate com este GIF: deixa o VK cuidar
         const pvv = (d.preview && d.preview.video) || {};
@@ -967,7 +968,7 @@
         const input = document.querySelector(INPUT_SEL);
         const att = document.querySelector(INPUT_ATTACH_SEL);
         const text = input ? (input.innerText || '').trim() : '';
-        return text !== '' || !!(att && att.children.length);
+        return text !== '' || !!(att && att.children.length) || (!att && composerThumbs(input).length > 0);   // v6.32: sem o testid dos anexos, olha as miniaturas
     }
 
     function getScroller(el) {
@@ -1026,15 +1027,15 @@
         const txt = el.querySelector('#vk-ar-status-text');
         const btn = el.querySelector('#vk-ar-status-btn');
         txt.style.display = hidden ? 'none' : 'inline';
-        txt.textContent = (lastStatus ? lastStatus + ' · ' : '') + reqPerMin() + ' req/min';
-        btn.textContent = hidden ? '⚡' : '✕';
+        txt.textContent = (lastStatus ? lastStatus + ' · ' : '') + reqPerMin() + ' req/min' + healthText();
+        btn.textContent = hidden ? (healthIsBad() ? '⚠' : '⚡') : '✕';
         btn.title = hidden ? 'Mostrar o painel de status' : 'Ocultar o painel de status';
-        el.style.opacity = hidden ? '.35' : '1';
+        el.style.opacity = hidden && !healthIsBad() ? '.35' : '1'; el.title = healthTitle();
         el.style.bottom = renderUpdateBar() ? '34px' : '8px';   // com versão nova, a barra de aviso fica abaixo do painel
     }
 
     // ---------- Aviso de versão nova ----------
-    const SCRIPT_VERSION = '6.31';   // mantenha igual ao @version do cabeçalho
+    const SCRIPT_VERSION = '6.32';   // mantenha igual ao @version do cabeçalho
     const META_URL = 'https://update.greasyfork.org/scripts/600713/Salva%20VK.meta.js';
     const INSTALL_URL = 'https://update.greasyfork.org/scripts/600713/Salva%20VK.user.js';
     let newVersion = null;
@@ -1332,6 +1333,7 @@
     }
 
     function fillBody(n, item) {
+        if (n.__arEditing) return;
         const box = ensureBody(n);
         if (!box) { log('fillBody: não achei onde colocar o corpo do comentário', item.id); return; }
         const inner = box.firstElementChild || box;
@@ -1759,32 +1761,110 @@
     // Comentário nativo: é seu se tem o botão de editar. Comentário do script: compara o link do autor.
     function isOwn(card) {
         if (!card.hasAttribute('data-ar-new')) return !!card.querySelector('[data-testid="comment_action_edit"]');
+        const from = card.getAttribute('data-ar-from');
+        if (meId != null && from && String(meId) === from) return true;
         const ow = card.querySelector('[data-testid="comment-owner"]');
         return !!(myHref && ow && ow.getAttribute('href') === myHref);
     }
 
+    const EDIT_ICON = '<path d="M3 13l.5-3L11 2.5a1.4 1.4 0 0 1 2 0l.5.5a1.4 1.4 0 0 1 0 2L6 12.5 3 13z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"></path>';
+    addStyle('[data-ar-new] [data-testid="comment_action_more"]{display:none !important}', 'vk-ar-hide-more');   // o menu "Ações" não funciona nas cópias
+
     function injectDeleteButtons() {
         learnMe();
         commentNodes(document).forEach(card => {
-            if (card.querySelector('[data-testid="ar_comment_delete"]') || !isOwn(card)) return;
+            if (!isOwn(card)) return;
             const more = card.querySelector('[data-testid="comment_action_more"]');
             if (!more) return;
-            const b = more.cloneNode(true);   // mesmo visual dos botões nativos de ação
-            b.setAttribute('data-testid', 'ar_comment_delete');
-            b.removeAttribute('aria-expanded');
-            b.setAttribute('title', 'Excluir');
-            const sp = b.querySelector('span');
-            if (sp) sp.textContent = 'Excluir';
-            const svg = b.querySelector('svg');
-            if (svg) {
-                svg.setAttribute('class', 'vkuiIcon vkuiIcon--16 vkuiIcon--w-16 vkuiIcon--h-16');
-                svg.setAttribute('fill', 'none');
-                svg.style.color = '#FF6172';
-                svg.innerHTML = DEL_ICON;
+            const mkBtn = (tid, label, icon) => {
+                const b = more.cloneNode(true);   // mesmo visual dos botões nativos de ação
+                b.setAttribute('data-testid', tid);
+                b.removeAttribute('aria-expanded');
+                b.setAttribute('title', label);
+                const sp = b.querySelector('span');
+                if (sp) sp.textContent = label;
+                const svg = b.querySelector('svg');
+                if (svg) {
+                    svg.setAttribute('class', 'vkuiIcon vkuiIcon--16 vkuiIcon--w-16 vkuiIcon--h-16');
+                    svg.setAttribute('fill', 'none');
+                    svg.innerHTML = icon;
+                }
+                return b;
+            };
+            let del = card.querySelector('[data-testid="ar_comment_delete"]');
+            if (!del) {
+                del = mkBtn('ar_comment_delete', 'Excluir', DEL_ICON);
+                const s = del.querySelector('svg');
+                if (s) s.style.color = '#FF6172';
+                more.parentElement.insertBefore(del, more);
             }
-            more.parentElement.insertBefore(b, more);
+            if (card.hasAttribute('data-ar-new') && !card.querySelector('[data-testid="ar_comment_edit"]')) {
+                del.parentElement.insertBefore(mkBtn('ar_comment_edit', 'Editar', EDIT_ICON), del);
+            }
         });
     }
+
+    function startEdit(card) {
+        if (card.__arEditing) return;
+        const id = String(numId(card)), c = msgCache.get(id);
+        const box = card.querySelector('[data-testid="showmoretext-in-expanded"]');
+        if (!c || !box) { status('⚠ não achei o texto deste comentário'); return; }
+        const inner = box.firstElementChild || box, html = inner.innerHTML;
+        card.__arEditing = true;
+        const ta = mk('width:100%;min-height:72px;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font:inherit;resize:vertical;', null, 'textarea');
+        ta.value = c.text || '';
+        const bar = mk('display:flex;gap:6px;margin-top:6px;');
+        const ok = mk('', 'Salvar', 'button'), no = mk('', 'Cancelar', 'button');
+        ok.type = no.type = 'button';
+        ok.className = 'vk-ar-act vk-ar-primary';
+        no.className = 'vk-ar-act vk-ar-close';
+        bar.append(ok, no);
+        inner.textContent = '';
+        inner.append(ta, bar);
+        ta.focus();
+        no.onclick = () => { inner.innerHTML = html; card.__arEditing = false; };
+        ok.onclick = async () => {
+            ok.disabled = true;
+            try {
+                const text = trimTail(ta.value);
+                const atts = pinAttachmentsOf({ attachments: c.attachments });
+                if (!atts.ok) throw new Error(atts.why);
+                if (!text && !atts.list.length) throw new Error('comentário vazio');
+                const m = location.pathname.match(TOPIC_RE);
+                if (!m || !tpl) throw new Error('consulta do VK ainda não disponível');
+                let saved = false, lastErr = '';
+                for (const key of ['message', 'text']) {
+                    const sp = new URLSearchParams();
+                    tpl.pairs.forEach(p => { if (NO_LIKE_PARAMS.indexOf(p[0]) === -1) sp.append(p[0], p[1]); });
+                    sp.set('group_id', m[1]); sp.set('topic_id', m[2]); sp.set('comment_id', id); sp.set(key, text);
+                    if (atts.list.length) sp.set('attachments', atts.list.join(','));
+                    const j = await apiPost(tpl.url.replace(API_METHOD, 'board.editComment'), sp);
+                    if (!j.error) { saved = true; break; }
+                    lastErr = j.error.error_msg || JSON.stringify(j.error);
+                    if (!/message|text|parameter/i.test(lastErr)) break;
+                }
+                if (!saved) throw new Error(lastErr);
+                c.text = text;
+                card.__arEditing = false;
+                fillBody(card, { id, text, attachments: c.attachments, date: c.date });
+                status('✏ comentário editado');
+            } catch (err) {
+                ok.disabled = false;
+                status('⚠ editar falhou: ' + err.message);
+                log('Erro ao editar:', err);
+            }
+        };
+    }
+
+    document.addEventListener('click', e => {
+        const t = e.target && e.target.closest && e.target.closest('[data-testid="ar_comment_edit"]');
+        if (!t) return;
+        e.preventDefault();
+        e.stopPropagation();
+        let c = t.closest(COMMENT_SEL);
+        while (c && !COMMENT_ID_RE.test(idOf(c))) c = c.parentElement && c.parentElement.closest(COMMENT_SEL);
+        if (c) startEdit(c);
+    }, true);
 
     async function deleteComment(card) {
         if (card.__arDeleting) return;
@@ -1956,9 +2036,9 @@
                 pinKeep(card);
                 return;
             }
-            const edit = card.querySelector('[data-testid="comment_action_edit"]');
+            const edit = card.querySelector('[data-testid="comment_action_edit"],[data-testid="ar_comment_edit"]');
             const more = card.querySelector('[data-testid="comment_action_more"]');
-            const anchor = edit || more;   // post do próprio autor: ao lado do botão de editar; dos outros: ao lado dos 3 pontinhos
+            const anchor = card.querySelector('[data-testid="ar_comment_mark"]') || edit || card.querySelector('[data-testid="ar_comment_delete"]') || more;
             const base = more || edit;
             if (!anchor || !base) return;
             b = base.cloneNode(true);   // mesmo visual dos botões nativos de ação
@@ -2176,10 +2256,9 @@
                 pinKeep(card);
                 return;
             }
-            const edit = card.querySelector('[data-testid="comment_action_edit"]');
+            const edit = card.querySelector('[data-testid="comment_action_edit"],[data-testid="ar_comment_edit"]');
             const more = card.querySelector('[data-testid="comment_action_more"]');
-            const pin = card.querySelector('[data-testid="ar_comment_pin"]');
-            const anchor = pin || edit || more;   // antes do pino do autor, se houver; senão onde o pino ficaria
+            const anchor = edit || card.querySelector('[data-testid="ar_comment_delete"]') || more;
             const base = more || edit;
             if (!anchor || !base) return;
             b = base.cloneNode(true);   // mesmo visual dos botões nativos de ação
@@ -3009,6 +3088,7 @@
             // Pergunta o total atual (já com o seu comentário) para descobrir onde fica a última página
             const resp = await callApi(s => { s.set('count', '1'); s.set('offset', '0'); });
             const total = typeof resp.count === 'number' ? resp.count : 0;
+                shim.seed(o, resp.items);
             if (!total) return;
             const target = isDescOrder() ? 0 : Math.floor((total - 1) / pageSize) * pageSize;
             for (let i = 0; i < 4; i++) {
@@ -3062,7 +3142,7 @@
     const attachCount = () => {
         if (attachScope && attachScope.isConnected) return attachScope.querySelectorAll(TOPIC_THUMB_SEL).length;
         const a = document.querySelector(INPUT_ATTACH_SEL);
-        return a ? a.children.length : 0;
+        return a ? a.children.length : composerThumbs(document.querySelector(INPUT_SEL)).length;   // v6.32
     };
 
     function findPickerX() {
@@ -4781,19 +4861,31 @@
     // se não houver MP4 (só HLS) ou der erro, o clique segue normalmente e abre o vídeo no VK.
     const VK_VIDEO_TTL_MS = 20 * 60 * 1000;   // os links de vídeo expiram; busca de novo depois disso
     const vkVideoCache = new Map();           // 'dono_id' -> { t, p: Promise<{ url, w, h, poster, q } | null> }
+    // Chave de acesso do link do vídeo: access_key ou, nos links novos (?list=<hash>&from=access_hash), o próprio hash do list
+    function vkVideoKey(href) {
+        try {
+            const sp = new URL(href, location.href).searchParams;
+            const ak = sp.get('access_key');
+            if (ak) return ak;
+            const ls = sp.get('list') || '';
+            return /^[0-9a-f]{12,32}$/i.test(ls) ? ls : '';   // list= também pode ser playlist (ln-..., club...): só aceita hash hexadecimal
+        } catch (e) { return ''; }
+    }
     function vkVideo(pair, key) {
         const c = vkVideoCache.get(pair);
         if (c && Date.now() - c.t < VK_VIDEO_TTL_MS) return c.p;
         const p = (async () => {
-            if (!tpl) return null;
+            if (!tpl) { log('Vídeo VK: sem sessão (tpl) para consultar o vídeo', pair); return null; }
             const tok = (tpl.pairs.find(x => x[0] === 'access_token') || [])[1];
             const u = new URL(tpl.url);
             u.pathname = u.pathname.replace(/\/method\/[^/?#]+/, '/method/video.get');
             const sp = new URLSearchParams({ videos: pair + (key ? '_' + key : ''), access_token: tok });
             const j = await apiPost(u.href, sp);
             if (j.error) { log('video.get recusado:', JSON.stringify(j.error)); return null; }
+            log('Vídeo VK: video.get', pair, key ? '(com chave)' : '(sem chave)');
             const v = ((j.response && j.response.items) || [])[0];
-            if (!v || !v.files) return null;
+            if (!v) { log('Vídeo VK: video.get sem item (vídeo removido, privado ou exige chave):', pair, key ? '[chave enviada]' : '[sem chave]'); return null; }
+            if (!v.files) { log('Vídeo VK: item sem "files" (externo, live ou em processamento):', pair, '| platform=' + (v.platform || '-'), '| live=' + (v.live || 0), '| restrito=' + (v.content_restricted || 0)); return null; }
             let best = null, q = 0;
             const list = [];   // todas as qualidades MP4, da maior para a menor
             Object.keys(v.files).forEach(k => {
@@ -4839,10 +4931,41 @@
             n.append(l, c);
             box.appendChild(n);
         };
+        // Plano B: sem MP4 direto, toca no player oficial do VK (não permite baixar; o botão "Abrir no VK" continua)
+        const embed = why => {
+            const ids = pair.split('_');
+            let origin = location.origin;
+            try { origin = new URL(a.href, location.href).origin; } catch (e) { /* usa a origem da página */ }
+            const src = origin + '/video_ext.php?oid=' + encodeURIComponent(ids[0]) + '&id=' + encodeURIComponent(ids[1]) + '&hd=2&autoplay=1';
+            log('Vídeo VK: sem MP4 direto (' + why + '); usando o player oficial:', src);
+            box.textContent = '';
+            const f = mk('width:100%;aspect-ratio:16/9;border:0;border-radius:12px;display:block;background:#000;', null, 'iframe');
+            f.allow = 'fullscreen; autoplay; picture-in-picture; encrypted-media';
+            f.allowFullscreen = true;
+            f.src = src;
+            const foot = mk('');
+            foot.className = 'vk-ar-foot';
+            const close = mk('', '✕ Fechar', 'button');
+            close.className = 'vk-ar-act vk-ar-close';
+            close.type = 'button';
+            close.addEventListener('click', back);
+            const open = mk('', 'Abrir no VK ↗', 'a');
+            open.className = 'vk-ar-act vk-ar-primary';
+            open.href = a.href; open.target = '_blank'; open.rel = 'noopener';
+            const note = mk('', '· player do VK: sem download direto', 'span');
+            note.className = 'vk-ar-note';
+            foot.append(close, open, note);
+            box.append(f, foot);
+        };
         const waitTpl = async () => { for (let i = 0; i < 40 && !tpl; i++) { synthTpl(); if (tpl) break; await sleep(200); } };
         waitTpl().then(() => vkVideo(pair, key)).then(info => {
             if (!box.isConnected) return;
-            if (!info) { log('Vídeo VK: sem informação do vídeo'); vkVideoCache.delete(pair); giveUp('Não consegui tocar este vídeo aqui.'); return; }
+            if (!info) {
+                log('Vídeo VK: sem informação do vídeo');
+                vkVideoCache.delete(pair);
+                if (VK_VIDEO_EMBED) embed('sem informação do vídeo'); else giveUp('Não consegui tocar este vídeo aqui.');
+                return;
+            }
             log('Vídeo VK: tocando', info.q + 'p', info.url.slice(0, 80));
             box.textContent = '';
             const hf = mk('width:' + (VK_VIDEO_MAX_H_PX ? 'min(100%,' + Math.round(VK_VIDEO_MAX_H_PX * info.w / info.h) + 'px)' : '100%') + ';aspect-ratio:' + info.w + '/' + info.h + ';border:0;border-radius:12px;display:block;background:#000;', null, 'iframe');
@@ -4970,7 +5093,7 @@
     }
 
     document.addEventListener('securitypolicyviolation', e => {
-        if (/okcdn|vkuser|userapi|vkvideo|mycdn/i.test(e.blockedURI || '')) log('Vídeo VK: bloqueado pela política do VK (' + e.effectiveDirective + '):', (e.blockedURI || '').slice(0, 100));
+        if (/okcdn|vkuser|userapi|vkvideo|mycdn|video_ext/i.test(e.blockedURI || '')) log('Vídeo VK: bloqueado pela política do VK (' + e.effectiveDirective + '):', (e.blockedURI || '').slice(0, 100));
     });
 
     // Título do vídeo do VK embaixo da miniatura (vem do cache dos comentários: não faz requisição)
@@ -5028,9 +5151,7 @@
         e.preventDefault();
         e.stopImmediatePropagation();   // o VK não recebe este clique
         vkVideoClickAt = Date.now();
-        let key = '';
-        try { key = new URL(a.href, location.href).searchParams.get('access_key') || ''; } catch (err) { /* ignora */ }
-        showVkPlayer(a, m[1], key);
+        showVkPlayer(a, m[1], vkVideoKey(a.href));
     }, true);
 
     // Plano B: se o VK bloquear o iframe do YouTube, volta para a miniatura e abre o vídeo em nova aba
@@ -6005,7 +6126,8 @@
             if (Date.now() - navStamp < NAV_SETTLE_MS) return;   // o VK ainda está trocando de página
             const liveList = document.querySelector(LIST_SEL);
             if (!liveList) { status('⚠ lista de comentários não encontrada'); return; }
-            if (!tpl) synthTpl();   // tenta montar a consulta com as credenciais de outras chamadas do VK
+            if (!tpl && !base) seedBaseFromPage();
+            if (!tpl) synthTpl();
             if (tpl) { noTplSince = 0; }
             else {
                 const now = Date.now();
@@ -6177,7 +6299,7 @@
 
             const secs = ((performance.now() - t0) / 1000).toFixed(2);
             cycles++;
-            status('⚡ v6.31 #' + cycles + ' · ' + secs + 's · ' +
+            status('⚡ v6.32 #' + cycles + ' · ' + secs + 's · ' +
                    (offset + 1) + '-' + (offset + items.length) + ' de ' + total +
                    (fresh.length ? ' · +' + fresh.length + ' NOVO(S)' : '') + (tailCapped ? ' · limite da rolagem contínua' : ''));
 
@@ -6452,6 +6574,148 @@
     setInterval(() => { try { injectBoardRefresh(); } catch (e) { /* ignora */ } }, 700);
     setInterval(() => { try { gotoLastComment(); } catch (e) { /* ignora */ } }, 400);
     setInterval(() => { try { renderStatus(); } catch (e) { /* ignora */ } }, 2000);
+
+    // ===== AUTOTESTE (v6.32) =====
+    // Confere de tempos em tempos se as "âncoras" de que o script depende ainda existem na página do tópico.
+    // Se alguma sumir em verificações seguidas, o painel de status mostra ⚠ e o console diz o que deixou de funcionar.
+    // Console: SalvaVKHealth.run() verifica agora | SalvaVKHealth.inspect('composer'|'comment'|'board'|'topic-form') devolve trechos do HTML para diagnóstico
+    const HEALTH_EVERY_MS = 3000;
+    var healthState = { bad: [], all: [], streak: Object.create(null), sig: '', prev: '' };
+    const BOARD_LINK_RE = /\/board-?\d+\/?([?#].*)?$/;
+    const healthN = sel => { try { return document.querySelectorAll(sel).length; } catch (e) { return 0; } };
+    const healthNat = tid => [...document.querySelectorAll('[data-testid="' + tid + '"]')].filter(e => !e.closest('[data-ar-new],[data-ar-top]')).length;
+
+    // Links para a lista de discussões ("Discussões" no topo do tópico)
+    function boardLinks() {
+        return [...document.querySelectorAll('a[href]')].filter(a => {
+            const h = a.getAttribute('href') || '';
+            if (!BOARD_LINK_RE.test(h) || a.closest('[data-comment-offset],[data-ar-top],[data-ar-new]')) return false;
+            try { const u = new URL(h, location.href); return u.origin === location.origin && /^\/board-?\d+\/?$/.test(u.pathname); } catch (e) { return false; }
+        });
+    }
+
+    // Região da caixa de resposta: o maior bloco em volta da caixa de texto que ainda não inclui comentários da lista
+    function composerRegion(input) {
+        if (!input) return null;
+        let best = input.parentElement, p = best, n = 0;
+        while (p && p !== document.body && n < 8) {
+            if (p.querySelector('[data-comment-offset],' + LIST_SEL)) break;
+            best = p;
+            p = p.parentElement;
+            n++;
+        }
+        return best;
+    }
+    // Miniaturas de anexo no rascunho, quando o VK não oferece mais o data-testid dos anexos (imagens grandes que não são foto de perfil)
+    function composerThumbs(input) {
+        const reg = composerRegion(input);
+        if (!reg) return [];
+        return [...reg.querySelectorAll('img')].filter(im => !input.contains(im) &&
+            !im.closest('[data-testid="comment-avatar"],a[aria-hidden="true"]') && im.clientWidth >= 56 && im.clientHeight >= 56);
+    }
+
+    function healthRun() {
+        if (!document.body || document.hidden || !isTopic()) { healthState.bad = []; healthState.all = []; healthState.streak = Object.create(null); return healthState; }
+        const rows = [...document.querySelectorAll('[data-comment-offset]')].filter(n => !n.hasAttribute('data-ar-new') && !n.hasAttribute('data-ar-top'));
+        const tagged = rows.filter(n => COMMENT_ID_RE.test(n.getAttribute('data-testid') || '')).length;
+        // comentários visíveis pela estrutura (mesma pista que a camada de compatibilidade usa), mesmo que o data-comment-offset tenha sumido
+        const blocks = [...document.querySelectorAll('#page_body a[aria-hidden="true"][tabindex="-1"]')].filter(a => !a.closest('[data-ar-new],[data-ar-top]') &&
+            a.parentElement && a.parentElement.parentElement && a.parentElement.parentElement.querySelector('span[role="button"]')).length;
+        const has = rows.length > 0, vis = Math.max(rows.length, blocks);
+        const C = (k, label, need, got, fx, confirm) => ({ k, label, need: !!need, got, fx, confirm: confirm || 2 });
+        const list = [
+            C('api', 'consulta à API do VK', true, tpl ? 1 : 0, 'tudo que usa a API: comentários novos, curtir, citações, post em destaque', 4),
+            C('falhas', 'consultas à API falhando', true, failures >= 3 ? 0 : 1, 'atualização automática dos comentários', 1),
+            C('offset', 'data-comment-offset nos comentários', blocks > 0, rows.length, 'janela da API, página atual, comentários novos, camada de compatibilidade'),
+            C('ids', 'identificação dos comentários (' + tagged + '/' + rows.length + ')', has, tagged >= rows.length ? 1 : 0, 'comentários novos, duplicatas, excluir, editar, curtir, destaque', 3),
+            C('lista', 'lista de comentários', has, healthN('[data-testid="board-comments-list"]'), 'ciclo principal: sem isso nenhum comentário novo é acrescentado')
+        ];
+        [
+            ['comment-owner', 'nome do autor', 'balão de citação, excluir/editar, pino, marcador, destaque'],
+            ['comment-avatar', 'foto do autor', 'tamanho da foto, cópias de comentários novos'],
+            ['showmoretext-in-expanded', 'texto do comentário', 'citações, vídeos/tweets incorporados, edição, comentários novos'],
+            ['comment-reply', 'botão Responder', 'responder, horário como link, comentários novos'],
+            ['comment-like', 'botão de curtir', 'curtir, número de curtidas, cartão de destaque'],
+            ['comment_action_more', 'menu Ações', 'botões de excluir, editar, fixar e marcar post']
+        ].forEach(p => list.push(C(p[0], p[1], vis > 0, healthNat(p[0]), p[2])));
+        list.push(C('comment-attachments', 'anexos dos comentários', healthN('[data-attachment-types]') > 0, healthNat('comment-attachments'), 'imagem sozinha, vídeo do VK, esconder foto repetida'));
+        list.push(C('content-editable-input', 'caixa de comentário', healthN('div[role="textbox"][contenteditable="true"]') > 0, healthN(INPUT_SEL), 'colar imagem, Ctrl+Enter, rascunho'));
+        list.push(C('breadcrumb', 'link "Discussões"', boardLinks().length > 0, healthN('a[data-testid="breadcrumb"]'), 'recarregar a lista de tópicos ao clicar em "Discussões"'));
+
+        const bad = [];
+        list.forEach(c => {
+            const ok = !c.need || c.got > 0;
+            const s = ok ? 0 : (healthState.streak[c.k] || 0) + 1;
+            healthState.streak[c.k] = s;
+            if (s >= c.confirm) bad.push(c);
+        });
+        healthState.all = list;
+        healthState.bad = bad;
+        const sig = bad.map(c => c.k).join(',');
+        // só avisa quando o conjunto de problemas ficou igual em 2 verificações seguidas (evita vários avisos enquanto ele cresce)
+        const stable = sig === healthState.prev;
+        healthState.prev = sig;
+        if (stable && sig !== healthState.sig) {
+            healthState.sig = sig;
+            if (bad.length) console.warn('[Salva VK] Autoteste: ' + bad.length + ' ponto(s) com problema nesta página:\n' +
+                bad.map(c => ' • ' + c.label + ' → afeta: ' + c.fx).join('\n') +
+                '\nPara diagnosticar: SalvaVKHealth.inspect("composer" | "comment" | "board" | "topic-form")');
+            else log('Autoteste: tudo certo');
+        }
+        return healthState;
+    }
+
+    const healthIsBad = () => !!(healthState && healthState.bad && healthState.bad.length);
+    function healthText() {
+        const b = (healthState && healthState.bad) || [];
+        if (!b.length) return '';
+        return ' · ⚠ sem: ' + b.slice(0, 3).map(c => c.label).join(', ') + (b.length > 3 ? ' +' + (b.length - 3) : '');
+    }
+    function healthTitle() {
+        const b = (healthState && healthState.bad) || [];
+        return b.length ? 'Autoteste: o VK parece ter mudado a página.\n' + b.map(c => '• ' + c.label + ' → ' + c.fx).join('\n')
+            : 'Autoteste: nenhum problema detectado';
+    }
+
+    // Trechos do HTML para diagnóstico (use copy(SalvaVKHealth.inspect('composer')) no console e cole na conversa).
+    // Confira antes se o trecho não tem texto seu que você não queira compartilhar.
+    function healthInspect(what) {
+        const cut = (el, n) => el ? el.outerHTML.slice(0, n || 6000) : '(não encontrado)';
+        let out;
+        if (what === 'composer') {
+            const input = document.querySelector('div[role="textbox"][contenteditable="true"]');
+            const reg = composerRegion(input);
+            out = '// região da caixa de resposta | miniaturas detectadas: ' + (reg ? composerThumbs(input).length : '-') + '\n' + cut(reg, 8000);
+        } else if (what === 'comment') {
+            const row = [...document.querySelectorAll('[data-comment-offset]')].find(n => !n.hasAttribute('data-ar-new') && !n.hasAttribute('data-ar-top'));
+            out = '// primeiro comentário da tela\n' + cut(row, 8000);
+        } else if (what === 'board') {
+            const first = document.querySelector('a[href*="/topic"]');
+            let blk = first;
+            const distinct = el => new Set([...el.querySelectorAll('a[href*="/topic"]')].map(x => x.getAttribute('href'))).size;
+            for (let i = 0; i < 10 && blk && blk.parentElement; i++) { if (distinct(blk.parentElement) > 1) break; blk = blk.parentElement; }
+            out = '// uma linha da lista de tópicos\n' + cut(blk, 8000);
+        } else if (what === 'topic-form') {
+            const t = document.querySelector('textarea');
+            out = '// formulário de criar tópico (primeiro textarea da página)\n' + cut(t && (t.closest('form') || (t.parentElement && t.parentElement.parentElement && t.parentElement.parentElement.parentElement)), 8000);
+        } else {
+            out = 'Use: SalvaVKHealth.inspect("composer" | "comment" | "board" | "topic-form")';
+        }
+        console.log(out);
+        return out;
+    }
+
+    try {
+        Object.defineProperty(PW, 'SalvaVKHealth', {
+            value: Object.freeze({
+                run: () => { healthRun(); return healthState.all.map(c => ({ ponto: c.label, esperado: c.need, encontrado: c.got, ok: !c.need || c.got > 0 })); },
+                inspect: healthInspect
+            }),
+            configurable: true
+        });
+    } catch (e) { /* sandbox pode impedir a exposição */ }
+    setInterval(() => { try { healthRun(); renderStatus(); } catch (e) { /* ignora */ } }, HEALTH_EVERY_MS);
+
     setInterval(() => { try { const r = reqReport(); log('Requisições no último minuto: ' + r.total + '\n   ' + r.rows.join('\n   ')); } catch (e) { /* ignora */ } }, 60000);
 
 
@@ -6741,7 +7005,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     const SalvaVK = Object.freeze({
         core: Object.freeze({
-            version: '6.31',
+            version: '6.32',
             apiVersion: 1,
             get accountId() { return meId || null; },
             get page() {
@@ -7011,8 +7275,186 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     // Carrega manifesto e módulos sem bloquear o início do script legado.
     moduleLoader.start().catch(error => log('Carregador modular falhou:', error));
 
+    // ===== CAMADA DE COMPATIBILIDADE (v6.32): devolve os data-testid que o VK removeu =====
+    function pageToken() {
+        const t = PW.vk && PW.vk.webToken;
+        return t && t.access_token && (!t.expired_at || t.expired_at * 1000 > Date.now() + 15000) ? t.access_token : null;
+    }
+    function seedBaseFromPage() {   // sem credenciais capturadas: usa o token que a própria página guarda
+        const t = pageToken(), dom = PW.vk && PW.vk.apiConfigDomains && PW.vk.apiConfigDomains.apiDomain;
+        if (base || !t || !dom) return;
+        base = { origin: 'https://' + dom, headers: {}, pairs: [['access_token', t], ['v', '5.289'], ['client_id', '6287487']] };
+        log('Credenciais montadas a partir do token da página (window.vk.webToken)');
+    }
+
+    const shim = (() => {
+        const tag = (el, id) => { if (el && el.getAttribute('data-testid') !== id) el.setAttribute('data-testid', id); return !!el; };
+        const sigOf = s => String(s || '').replace(/\[(?:id|club|public)\d+(?::[\w-]+)?\|([^\]]+)\]/g, '$1')
+            .replace(/[^\p{L}\p{N}]/gu, '').toLowerCase().slice(0, 15);
+        const offMap = new Map(), bad = new Map();   // offset da API -> { id, sig, at }
+        let loading = false, lastLoad = 0, topic = '', lastReport = '';
+        const bp = k => base && (base.pairs.find(p => p[0] === k) || [])[1];
+
+        async function load(min, max) {
+            const m = location.pathname.match(TOPIC_RE), t0 = bp('access_token');
+            const tok = t0 && !isBadToken(t0) ? t0 : pageToken();
+            if (!m || !tok) return;
+            const dom = PW.vk && PW.vk.apiConfigDomains && PW.vk.apiConfigDomains.apiDomain;
+            const origin = base ? base.origin : 'https://' + (dom || 'api.vk.ru');
+            for (let o = min; o <= max; o += 100) {
+                const sp = new URLSearchParams({ group_id: m[1], topic_id: m[2], offset: o, count: Math.min(100, max - o + 1),
+                    sort: 'asc', extended: 1, need_likes: 1, v: bp('v') || '5.289', client_id: bp('client_id') || '6287487', access_token: tok });
+                countReq('board.getComments');
+                const j = await (await origFetch(origin + '/method/' + API_METHOD, { method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: sp.toString(), cache: 'no-store' })).json();
+                if (j.error) { log('Camada de compatibilidade: API recusou:', j.error.error_code, j.error.error_msg); return; }
+                Object.assign(authorCache, buildAuthors(j.response));
+                (j.response.items || []).forEach((it, i) => { cacheItem(it); offMap.set(o + i, { id: it.id, sig: sigOf(stripMarkup(it.text)), at: Date.now() }); });
+            }
+        }
+
+        function parts(block) {
+            const q = s => block.querySelector(s), qa = s => [...block.querySelectorAll(s)], r = {};
+            r.comment = tag(block, 'comment');
+            const av = q('a[aria-hidden="true"][tabindex="-1"]');
+            r.avatar = tag(av, 'comment-avatar');
+            r.owner = tag(qa('a[href]').find(x => x !== av && x.getAttribute('aria-hidden') !== 'true' &&
+                !x.closest('[data-vkit-show-more-text]') && x.textContent.trim()), 'comment-owner');
+            const withIcon = ic => qa('button').find(b => b.querySelector('svg[class*="' + ic + '"]'));
+            r.more = tag(withIcon('vkuiIcon--more_horizontal'), 'comment_action_more');
+            r.edit = tag(withIcon('vkuiIcon--pen_outline'), 'comment_action_edit');
+            const ct = q('[data-vkit-show-more-text]');
+            r.text = tag(ct, 'comment-text') && tag(ct.firstElementChild, 'showmoretext-in-expanded');
+            r.reply = tag(qa('span[role="button"]').find(x => !x.closest('[data-vkit-show-more-text]')), 'comment-reply');
+            r.like = tag(qa('[role="button"]').find(b => b.querySelector('svg[class*="vkuiIcon--like_"]')), 'comment-like');
+            const at = q('[data-attachment-types]');
+            r.anexo = tag(at, 'comment-attachments');
+            if (at) {
+                tag(at.querySelector('[style*="--media-grid-ratio"]'), 'media-grid-item');
+                at.querySelectorAll('img[data-vkit-primary-attachment],img[data-vkit-primary-attachment-image]').forEach(im => tag(im, 'media-grid-image'));
+                const v = at.querySelector('a[href*="/video"]');
+                if (v) tag(v.closest('[role="presentation"]') || v.parentElement, 'comment-attach-video');
+            }
+            return r;
+        }
+
+        function pass() {
+            if (!isTopic()) return;
+            if (topic !== location.pathname) { topic = location.pathname; offMap.clear(); bad.clear(); }
+            const sums = { blocos: 0 };
+            document.querySelectorAll('#page_body a[aria-hidden="true"][tabindex="-1"]').forEach(a => {
+                if (a.closest('[data-ar-new],[data-ar-top]')) return;
+                const block = a.parentElement && a.parentElement.parentElement;
+                if (!block || !block.querySelector('span[role="button"]')) return;
+                const r = parts(block);
+                sums.blocos++;
+                Object.keys(r).forEach(k => { sums[k] = (sums[k] || 0) + (r[k] ? 1 : 0); });
+            });
+            const roots = [...document.querySelectorAll('[data-comment-offset]')].filter(n => !n.closest('[data-ar-new],[data-ar-top]'));
+            const need = [], now = Date.now();
+            roots.forEach(root => {
+                const o = parseInt(root.getAttribute('data-comment-offset'), 10);
+                if (!Number.isFinite(o)) return;
+                const box = root.querySelector('[data-vkit-show-more-text]'), sig = sigOf(box ? box.innerText : ''), e = offMap.get(o);
+                const cur = root.getAttribute('data-testid');
+                if (e && e.sig === sig) { tag(root, 'board-comment-' + e.id); bad.delete(o); return; }
+                if (cur && COMMENT_ID_RE.test(cur)) root.removeAttribute('data-testid');   // o VK reaproveitou o elemento para outro comentário
+                if (!e || now - e.at > 5000) need.push(o);
+                else if (!bad.has(o)) { bad.set(o, 1); log('Camada de compatibilidade: offset', o, 'não bate | tela:', sig, '| API:', e.sig); }
+            });
+            if (roots.length) tag(roots[0].parentElement, 'board-comments-list');
+            tag(document.querySelector('div[role="textbox"][contenteditable="true"]'), 'content-editable-input');
+            boardLinks().forEach(a => { if (!a.hasAttribute('data-testid')) tag(a, 'breadcrumb'); });   // v6.32: devolve o testid do link "Discussões"
+            if (need.length && !loading && now - lastLoad > 1500) {
+                loading = true; lastLoad = now;
+                load(Math.max(0, Math.min(...need) - 40), Math.max(...need) + 40)
+                    .catch(e => log('Camada de compatibilidade: erro ao ler a API:', e && e.message))
+                    .finally(() => { loading = false; pass(); });
+            }
+            const rep = 'blocos ' + sums.blocos + ' | lista ' + roots.length + ' (com id ' +
+                roots.filter(n => COMMENT_ID_RE.test(n.getAttribute('data-testid') || '')).length + ') | ' +
+                Object.keys(sums).filter(k => k !== 'blocos').map(k => k + ' ' + sums[k]).join(', ') +
+                (bad.size ? ' | SEM CORRESPONDÊNCIA: ' + [...bad.keys()].join(',') : '');
+            if (rep !== lastReport) { lastReport = rep; log('Camada de compatibilidade:', rep); }
+        }
+        const seed = (o, items) => (items || []).forEach((it, i) => offMap.set(o + i, { id: it.id, sig: sigOf(stripMarkup(it.text)), at: Date.now() }));
+        return { pass, seed };
+    })();
+
+    const ntTs = new Map();   // notificação -> { label, sec }: horário estimado e estável
+    const NT_UNIT = { s: 1e3, seg: 1e3, segundo: 1e3, segundos: 1e3, min: 6e4, minuto: 6e4, minutos: 6e4, h: 36e5, hora: 36e5, horas: 36e5,
+        d: 864e5, dia: 864e5, dias: 864e5, semana: 6048e5, semanas: 6048e5, mês: 2592e6, mes: 2592e6, meses: 2592e6, ano: 31536e6, anos: 31536e6 };
+    function ntEstimate(label, now) {
+        const s = String(label || '').trim().toLocaleLowerCase('pt-BR');
+        if (!s) return null;
+        if (/^(agora|agora mesmo|há poucos segundos|menos de um minuto)/.test(s)) return now;
+        if (/\bontem\b/.test(s)) return now - 864e5;
+        const m = s.match(/(\d+)\s*(semanas?|m[eê]ses?|anos?|segundos?|seg|minutos?|min|horas?|h|dias?|d|s)(?![\p{L}])/u);
+        return m && NT_UNIT[m[2]] ? now - (Number(m[1]) + 0.5) * NT_UNIT[m[2]] : null;   // +0,5: meio da faixa do rótulo
+    }
+
+    function shimNotif() {   // devolve os data-testid das notificações (rodam em qualquer página)
+        let ch = 0;
+        const T = (el, id) => { if (el && el.getAttribute('data-testid') !== id) { el.setAttribute('data-testid', id); ch++; } };
+        const prevSec = new Map();   // lista -> horário (s) do item nativo anterior
+        document.querySelectorAll('[role="listitem"]').forEach(li => {
+            if (li.closest('[data-ar-nt-own],[data-ar-nt-own-group]') || li.querySelector('[role="listitem"]')) return;
+            const menu = li.querySelector('button[aria-haspopup="menu"] svg[class*="more_vertical"]');
+            const av = [...li.querySelectorAll('a[href]')].find(a => a.querySelector(':scope > img'));
+            const stack = li.querySelector('div[style*="avatarstack_size"]');   // notificação agrupada ("Fulano e mais N")
+            if (!menu || !(av || stack)) return;   // não é uma notificação
+            const host = li.parentElement;
+            T(host, 'notifications-list-viewed');
+            T(menu.closest('button'), 'notification-menu');
+            if (av) T(av, 'notification-avatar');
+            if (stack) T(stack, 'notification-additional-avatar');
+            const link = li.querySelector('a[href*="post="]');
+            const box = link && link.parentElement;
+            if (link) {
+                T(link.querySelector('span'), 'notification-header');
+                const txt = box.nextElementSibling;
+                if (txt && txt.tagName === 'SPAN') T(txt, 'notification-text');
+            }
+            const timeEl = li.querySelector('.vkui-align-self-start span') || li.querySelector('span.vkuiTypography__inline');
+            T(timeEl, 'notification-time');
+
+            // horário do item: estimado uma vez, refeito só quando o rótulo muda, e nunca maior que o do item anterior
+            const label = timeEl ? timeEl.textContent.trim() : '';
+            const who = av ? av.getAttribute('href') : [...stack.querySelectorAll('img')].map(i => i.alt).join(',');
+            const key = (link ? link.href : '') + '|' + who;
+            let e = ntTs.get(key);
+            if (!e || e.label !== label) {
+                const t = ntEstimate(label, Date.now());
+                const idx = [...host.children].indexOf(li);
+                e = { label, sec: t != null ? Math.floor(t / 1000) : 1000 - idx };   // data antiga/sem rótulo: fica abaixo, na ordem do VK
+                ntTs.set(key, e);
+                if (ntTs.size > 2000) ntTs.delete(ntTs.keys().next().value);
+            }
+            let sec = e.sec;
+            const p = prevSec.get(host);
+            if (p != null && sec >= p) sec = p - 1;   // a ordem nativa do VK é a verdade
+            prevSec.set(host, sec);
+            const want = 'notification-item-ar_0_' + sec;
+            if (li.getAttribute('data-testid') !== want) { li.setAttribute('data-testid', want); ch++; }
+        });
+        if (ch) { try { document.body.appendChild(document.createComment('')).remove(); } catch (e) { /* ignora */ } }   // acorda o observador do módulo
+    }
+
+    let shimRaf = 0;
+    const shimKick = () => {
+        if (shimRaf) return;
+        shimRaf = requestAnimationFrame(() => {
+            shimRaf = 0;
+            try { shimNotif(); } catch (e) { log('Notificações (compatibilidade) falhou:', e); }
+            try { shim.pass(); } catch (e) { log('Camada de compatibilidade falhou:', e); }
+            try { topLikedSync(); } catch (e) { /* ignora */ }   // desenha o destaque no mesmo quadro em que os ids chegam
+        });
+    };
+    new MutationObserver(shimKick).observe(document.documentElement, { childList: true, subtree: true });
+    setInterval(shimKick, 400);
+
     // ===== FIM DA INTERFACE DE COMPATIBILIDADE =====
 
     loop();
-    log('Ativo (v6.31). Pausa de', INTERVAL_MS, 'ms entre consultas. Abas em segundo plano:', BG_TABS, '| id da aba:', TAB_ID);
+    log('Ativo (v6.32). Pausa de', INTERVAL_MS, 'ms entre consultas. Abas em segundo plano:', BG_TABS, '| id da aba:', TAB_ID);
 })();
