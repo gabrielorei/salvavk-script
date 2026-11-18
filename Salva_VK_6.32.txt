@@ -3087,8 +3087,9 @@
             const pageSize = parseInt(sp.get('count'), 10) || POSTS_PER_PAGE;
             // Pergunta o total atual (já com o seu comentário) para descobrir onde fica a última página
             const resp = await callApi(s => { s.set('count', '1'); s.set('offset', '0'); });
-            const total = typeof resp.count === 'number' ? resp.count : 0;
+                total = typeof resp.count === 'number' ? resp.count : 0;
                 shim.seed(o, resp.items);
+                Object.assign(authors, buildAuthors(resp));
             if (!total) return;
             const target = isDescOrder() ? 0 : Math.floor((total - 1) / pageSize) * pageSize;
             for (let i = 0; i < 4; i++) {
@@ -5784,10 +5785,18 @@
     // Clique na caixa do último autor (foto, nome, data ou o espaço entre eles): anota qual tópico foi e, quando ele abrir, rola até o último comentário
     document.addEventListener('click', e => {
         if (!GOTO_LAST_COMMENT || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-        const t = lastAuthorHit(e);
-        if (!t) return;
-        let topic = '';
-        for (let p = t, i = 0; p && i < 10; i++, p = p.parentElement) {   // o menor bloco que tenha links de UM só tópico é a linha clicada
+        let t = lastAuthorHit(e), topic = '';
+        if (!t) {
+            if (isTopic()) return;   // dentro de um tópico, "última página" da paginação não deve virar "ir ao último comentário"
+            const a = e.target && e.target.closest && e.target.closest('a[href*="offset=last"]');
+            if (!a) return;
+            let m = null;
+            try { m = new URL(a.getAttribute('href'), location.href).pathname.match(TOPIC_RE); } catch (x) { /* ignora */ }
+            if (!m) return;
+            t = a;
+            topic = m[1] + '_' + m[2];
+        }
+        for (let p = t, i = 0; !topic && p && i < 10; i++, p = p.parentElement) {   // o menor bloco que tenha links de UM só tópico é a linha clicada
             const ids = new Set();
             p.querySelectorAll('a[href*="/topic"]').forEach(a => {
                 try { const m = new URL(a.getAttribute('href'), location.href).pathname.match(TOPIC_RE); if (m) ids.add(m[1] + '_' + m[2]); } catch (x) { /* ignora */ }
@@ -5831,12 +5840,12 @@
         const last = lastCommentNode();
         if (!last) { gotoSeenAt = 0; return; }
         if (!gotoSeenAt) { gotoSeenAt = Date.now(); return; }
-        if (Date.now() - gotoSeenAt < 800) return;   // espera a página assentar
+        if (Date.now() - gotoSeenAt < 250) return;   // espera a página assentar
         const onLast = prevWin && prevWin.onLast && prevWin.href === location.href;
         if (!onLast && Date.now() - st.t < 5000) return;   // espera estar na última página (depois de 8 s, vai com o que há)
         SS.del(LASTCLICK_KEY);
         gotoSeenAt = 0;
-        log('Rolando até o último comentário do tópico', nodeIdKey(last));
+        log('Rolando até o último comentário do tópico', nodeIdKey(last), '|', (Date.now() - st.t) + ' ms depois do clique');
         last.scrollIntoView({ block: 'center', behavior: 'auto' });
         flashNode(last);
         gotoChase = { until: Date.now() + 3000 };   // por 3 s, corrige a posição se a página crescer
