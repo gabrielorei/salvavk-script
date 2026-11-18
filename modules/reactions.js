@@ -351,8 +351,9 @@ SalvaVK.modules.register({
             const win = rxMainCluster(ids);
             const fx = [];
             document.querySelectorAll('[data-ar-top-id]').forEach(el => {
-                const n = Number(el.getAttribute('data-ar-top-id'));
-                if (Number.isFinite(n) && fx.indexOf(n) < 0 && !(win && n >= win.lo && n <= win.hi)) fx.push(n);
+                const raw = el.getAttribute('data-ar-top-id');
+                const n = raw ? Number(raw) : NaN;
+                if (Number.isSafeInteger(n) && n > 0 && fx.indexOf(n) < 0 && !(win && n >= win.lo && n <= win.hi)) fx.push(n);
             });
             // 1º post do tópico (fixo no topo): seu id costuma ficar longe da janela da lista, então entra à parte
             if (rx.firstId != null && fx.indexOf(rx.firstId) < 0 && !(win && rx.firstId >= win.lo && rx.firstId <= win.hi) && rxFirstBlock()) fx.push(rx.firstId);
