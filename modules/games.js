@@ -11,7 +11,7 @@ SalvaVK.modules.register({
         const legacyStorage = api.storage;
         const LS = api.storage.forModule('games');
         const mk = api.ui.mk;
-        const DEBUG = false;
+        const DEBUG = true;
         const log = (...a) => DEBUG && console.log('[Salva VK · Jogos]', ...a);
         const esc = s => String(s == null ? '' : s)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -572,10 +572,14 @@ SalvaVK.modules.register({
         const feedCache = new Map(), items = [];
         const unresolved = [];
         await rdcPool(games.filter(e => e.kind !== 'ended'), 4, async (entry) => {
-            try {
-                const it = await resolveRdcGame(entry, feedCache, bola);
-                if (it) items.push(it); else unresolved.push(entry);
-            } catch (e) { log('Erro ao resolver o jogo', entry.g.home, e); }
+        try {
+            const it = await resolveRdcGame(entry, feedCache, bola);
+            if (it) items.push(it);
+            else unresolved.push(entry);
+        } catch (e) {
+            log('Erro ao resolver o jogo', entry.g.home, e);
+            unresolved.push(entry);
+        }
         });
         // sem YouTube e sem Bola Rolando: tenta as fontes extras (só busca se sobrou algum jogo)
         if (unresolved.length) {
