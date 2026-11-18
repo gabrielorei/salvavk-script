@@ -43,7 +43,7 @@ SalvaVK.modules.register({
         futnatv:   ['https://futnatv.net'],
         ppvApi:    ['https://api.ppv.st'],
         ppvSite:   ['https://ppv.st'],
-        rdcApi:    ['https://api.reidoscanais.my', 'https://api.reidoscanais.cam'],   // tenta na ordem
+        rdcApi:    ['https://api.reidoscanais.im', 'https://api.reidoscanais.my', 'https://api.reidoscanais.cam'],   // tenta na ordem
         rdcSite:   ['https://reidoscanais.cam'],
         rdcAgenda: ['https://reidoscanais.si/agenda']
     };
