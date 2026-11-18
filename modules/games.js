@@ -133,57 +133,54 @@ SalvaVK.modules.register({
 
     async function rdcGetText(url, options = {}) {
         const parsedUrl = new URL(url);
+    
         const rdcApiHosts = new Set([
             'api.reidoscanais.im',
             'api.reidoscanais.my',
             'api.reidoscanais.cam'
         ]);
-
-        // API do Rei dos Canais: requisição direta, sem a lista
-        // de destinos autorizados do núcleo SalvaVK.
+    
+        // API do Rei dos Canais: consulta direta, sem passar
+        // pela restrição de destinos do núcleo SalvaVK.
         if (rdcApiHosts.has(parsedUrl.hostname)) {
             if (parsedUrl.protocol !== 'https:') {
                 throw new Error('Protocolo não permitido para a API do Rei');
             }
-
-            const gmReq = typeof GM_xmlhttpRequest !== 'undefined'
-                ? GM_xmlhttpRequest
-                : (typeof GM !== 'undefined' && GM.xmlHttpRequest
-                    ? GM.xmlHttpRequest.bind(GM)
-                    : null);
-
-            if (!gmReq) {
-                throw new Error('GM_xmlhttpRequest indisponível');
-            }
-
-            return new Promise((resolve, reject) => {
-                gmReq({
+    
+            const controller = new AbortController();
+            const timeout = setTimeout(
+                () => controller.abort(),
+                options.timeout || 20000
+            );
+    
+            try {
+                const response = await fetch(parsedUrl.href, {
                     method: 'GET',
-                    url: parsedUrl.href,
                     headers: options.headers || {},
-                    responseType: 'text',
-                    timeout: options.timeout || 20000,
-                    onload: response => {
-                        if (response.status >= 200 && response.status < 400) {
-                            resolve(response.responseText || '');
-                        } else {
-                            reject(new Error('HTTP ' + response.status));
-                        }
-                    },
-                    onerror: () => reject(new Error('Falha de rede na API do Rei')),
-                    ontimeout: () => reject(new Error('Tempo esgotado na API do Rei'))
+                    mode: 'cors',
+                    credentials: 'omit',
+                    cache: 'no-store',
+                    signal: controller.signal
                 });
-            });
+    
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+    
+                return await response.text();
+            } finally {
+                clearTimeout(timeout);
+            }
         }
-
-        // Demais fontes continuam usando a API pública do SalvaVK.
+    
+        // Demais fontes continuam usando a rede pública do SalvaVK.
         const response = await api.network.request({
             method: 'GET',
             url,
             timeout: options.timeout || 20000,
             headers: options.headers || {}
         });
-
+    
         return response.responseText;
     }
 
