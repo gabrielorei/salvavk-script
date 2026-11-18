@@ -142,7 +142,7 @@
     const TWEET_VIDEO_MAX_H_PX = 400; // altura máxima do vídeo de tweet (vídeos na vertical ficam mais estreitos, como no player do VK); 0 = sem limite
     const HIDE_FIRST_POST_OFF_PAGE1 = true; // o 1º post do tópico (fixado no topo pelo VK, com bug que liga/desliga a cada página) só aparece na página 1
     const TOP_LIKED_POST = true;           // mostra, no começo da lista de comentários, o "Post em destaque" (o comentário com mais curtidas do tópico)
-    const TOP_LIKED_MIN = 1;               // só mostra se o comentário tiver pelo menos tantas curtidas
+    // const TOP_LIKED_MIN = 1;               // só mostra se o comentário tiver pelo menos tantas curtidas
     const TOP_LIKED_COMPACT = true;        // cartão do post em destaque COMPACTO por padrão: corta a mídia/texto na altura máxima abaixo, com botão Expandir/Recolher
     const TOP_PIN_POLL_MS = 8000;          // de quanto em quanto tempo olha os 100 comentários mais novos (post mais curtido), sem refazer a varredura inteira. Abaixo de ~5 s o VK pode limitar as chamadas
     const TOP_QUICK_BEST = true;           // nessa mesma olhada rápida, um comentário novo que passe o mais curtido atual vira o destaque na hora (sem esperar a varredura completa)
@@ -3086,10 +3086,10 @@
             const sp = buildParams();
             const pageSize = parseInt(sp.get('count'), 10) || POSTS_PER_PAGE;
             // Pergunta o total atual (já com o seu comentário) para descobrir onde fica a última página
-            const resp = await callApi(s => { s.set('count', '1'); s.set('offset', '0'); });
-                total = typeof resp.count === 'number' ? resp.count : 0;
-                shim.seed(o, resp.items);
-                Object.assign(authors, buildAuthors(resp));
+            const resp = await callApi(s => { s.set('count', '1'); s.set('offset', '0'); s.set('sort', 'asc'); });
+            const total = typeof resp.count === 'number' ? resp.count : 0;
+            Object.assign(authorCache, buildAuthors(resp));
+            shim.seed(0, resp.items);   // offset 0 em ordem crescente: casa com o que a camada de compatibilidade espera
             if (!total) return;
             const target = isDescOrder() ? 0 : Math.floor((total - 1) / pageSize) * pageSize;
             for (let i = 0; i < 4; i++) {
@@ -3866,6 +3866,29 @@
     const TOP_CACHE_MAX_AGE_MS = 14 * 24 * 3600 * 1000;    // cache mais velho que isso é ignorado
     const TOP_HIDDEN_KEY = 'vk_ar_top_hidden';             // tópicos em que o usuário ocultou o post em destaque
 
+    // ---- configurações do post em destaque (guardadas neste navegador) ----
+    const TOP_CFG_KEY = 'vk_ar_top_cfg';
+    let topCfgCache = null;
+    const cfgInt = (v, lo, hi, d) => { v = parseInt(v, 10); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
+    function topCfg() {
+        if (topCfgCache) return topCfgCache;
+        const o = LS.json(TOP_CFG_KEY, {}) || {};
+        return (topCfgCache = {
+            minLikes: cfgInt(o.minLikes, 1, 9999, 3),      // mínimo de curtidas para o "mais curtido" virar destaque
+            ageOn: !!o.ageOn,                              // ignorar posts antigos? (padrão: desmarcado)
+            ageMonths: cfgInt(o.ageMonths, 1, 240, 12),    // "antigo" = mais velho que isso
+            hideDefault: !!o.hideDefault                   // ocultar o destaque por padrão em todos os tópicos
+        });
+    }
+    function topCfgSave(c) {
+        LS.setJson(TOP_CFG_KEY, c);
+        topCfgCache = null;
+    }
+    function topTooOld(it) {
+        const c = topCfg();
+        return !!(c.ageOn && it && it.date && it.date < Date.now() / 1000 - c.ageMonths * 30.44 * 86400);
+    }
+
     (function injectTopLikedCss() {
         addStyle([
             // faixa lateral + fundo tingido com a cor de destaque do VK (acompanha tema claro/escuro)
@@ -3893,8 +3916,8 @@
             '[data-ar-top-clip] .ar-top-like-ov{display:flex;align-items:center;position:absolute;right:16px;bottom:8px;z-index:2}',
             '[data-ar-top-clip]::after{content:"";position:absolute;left:0;right:0;bottom:0;height:56px;pointer-events:none;background:linear-gradient(to bottom,rgba(255,255,255,0),var(--vkui--color_background_content,#fff))}',
             '@supports (background:color-mix(in srgb,red 10%,transparent)){[data-ar-top-clip]::after{background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--ar-accent) 6%,var(--vkui--color_background_content,#fff)))}}',
-            '[data-ar-top-mode="collapsed"]{background:none !important;box-shadow:none !important}',
-            '[data-ar-top-mode="collapsed"] .ar-top-bar{padding:8px 16px}',
+            '[data-ar-top-mode="collapsed"],[data-ar-top-mode="empty"]{background:none !important;box-shadow:none !important}',
+            '[data-ar-top-mode="collapsed"] .ar-top-bar,[data-ar-top-mode="empty"] .ar-top-bar{padding:8px 16px}',
             '.ar-top-bar{display:flex;align-items:center;flex-wrap:wrap;gap:2px 8px;padding:10px 16px 0 16px;font-size:13px;line-height:18px;text-transform:none;letter-spacing:normal}',
             '.ar-top-title{font-weight:700;color:var(--vkui--color_text_primary,inherit)}',
             '.ar-top-meta{font-weight:500;color:var(--vkui--color_text_secondary,inherit)}',
@@ -3971,10 +3994,13 @@
         } catch (e) { /* sem espaço ou bloqueado: segue sem cache */ }
     }
 
-    // ---- ocultar/exibir o post em destaque (vale só para o tópico atual e fica guardado no navegador) ----
     function topHiddenRead() {
         const o = LS.json(TOP_HIDDEN_KEY, {});
-        return typeof o === 'object' ? o : {};
+        return typeof o === 'object' && o ? o : {};
+    }
+    function topHiddenFor(key) {
+        const v = topHiddenRead()[key];
+        return v === undefined ? topCfg().hideDefault : v > 0;
     }
     function topSetHidden(hide) {
         const key = topState.key;
@@ -3982,7 +4008,8 @@
         topState.hidden = !!hide;
         try {
             const all = topHiddenRead();
-            if (hide) all[key] = Date.now(); else delete all[key];
+            if (hide === topCfg().hideDefault) delete all[key];   // igual ao padrão: não precisa guardar exceção
+            else all[key] = hide ? Date.now() : -1;
             const keep = Object.keys(all).sort((a, b) => all[b] - all[a]).slice(0, 200);
             const out = {};
             keep.forEach(k => { out[k] = all[k]; });
@@ -4176,7 +4203,7 @@
         }
         const pin = TOP_PIN_BY_AUTHOR ? topState.pin : null, best = topState.best;
         if (pin && !seen.has(String(pin.id))) { out.push({ item: pin, kind: 'pin' }); seen.add(String(pin.id)); }
-        if (best && topLikedCount(best) >= TOP_LIKED_MIN && !seen.has(String(best.id))) out.push({ item: best, kind: 'liked' });
+        if (best && topLikedCount(best) >= topCfg().minLikes && !topTooOld(best) && !seen.has(String(best.id))) out.push({ item: best, kind: 'liked' });
         return out;
     }
     // Qual post o cartão mostra agora: o que o usuário escolheu na troca (topState.view) ou, sem escolha, o de maior prioridade
@@ -4219,6 +4246,7 @@
         for (const it of (resp.items || [])) {
             if (it.deleted) continue;
             if (topState.firstId && String(it.id) === String(topState.firstId)) continue;
+            if (topTooOld(it)) continue;
             const lc = topLikedCount(it);
             if (best && String(it.id) === String(best.id)) {   // é o próprio líder: atualiza as curtidas
                 if (lc !== topLikedCount(best)) { best.likes = it.likes; changed = true; }
@@ -4413,6 +4441,80 @@
 
     const HELP_ICON = '<circle cx="12" cy="12" r="9"></circle><path d="M9.5 9.4a2.6 2.6 0 1 1 3.7 2.4c-.8.45-1.2 1-1.2 1.8" stroke-linecap="round"></path><path d="M12 17h.01" stroke-linecap="round"></path>';
 
+    const CFG_ICON = '<path d="M4 7h10M18 7h2M4 17h2M10 17h10" stroke-linecap="round"></path><circle cx="16" cy="7" r="2"></circle><circle cx="8" cy="17" r="2"></circle>';
+
+    let topCfgOpen = false;
+    function topSettingsOpen() {
+        if (topCfgOpen) return;
+        topCfgOpen = true;
+        const cfg = topCfg(), th = themeColors();
+        const ov = mk('position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;');
+        const box = mk('width:min(420px,92vw);padding:20px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.4);' +
+                       'font:14px/1.4 -apple-system,BlinkMacSystemFont,Roboto,"Segoe UI",sans-serif;' +
+                       'background:' + th.bg + ';color:' + th.color + ';');
+        box.appendChild(mk('font-weight:700;font-size:16px;margin-bottom:14px;', 'Configurações do post em destaque'));
+
+        const NUM = 'width:64px;padding:4px 6px;border-radius:6px;border:1px solid rgba(128,128,128,.45);background:transparent;color:inherit;font:inherit;';
+        const numInput = (val, min, max) => {
+            const i = mk(NUM, null, 'input');
+            i.type = 'number'; i.min = String(min); i.max = String(max); i.value = String(val);
+            return i;
+        };
+        const row = (...kids) => { const r = mk('display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;'); r.append(...kids); box.appendChild(r); return r; };
+        const check = (checked) => { const c = mk('width:16px;height:16px;margin:0;cursor:pointer;', null, 'input'); c.type = 'checkbox'; c.checked = checked; return c; };
+        const label = (text, forEl) => { const l = mk('cursor:pointer;', text, 'label'); l.addEventListener('click', e => { if (e.target === l && forEl) forEl.click(); }); return l; };
+        const hint = text => box.appendChild(mk('font-size:12px;opacity:.7;margin:-6px 0 12px;', text));
+
+        const minI = numInput(cfg.minLikes, 1, 9999);
+        row(mk('', 'Mínimo de curtidas para destacar o mais curtido:', 'span'), minI);
+
+        const ageC = check(cfg.ageOn), ageI = numInput(cfg.ageMonths, 1, 240);
+        row(ageC, label('Não destacar posts com mais de', ageC), ageI, mk('', 'meses', 'span'));
+        const syncAge = () => { ageI.disabled = !ageC.checked; ageI.style.opacity = ageC.checked ? '1' : '.5'; };
+        ageC.addEventListener('change', syncAge);
+        syncAge();
+
+        const hideC = check(cfg.hideDefault);
+        row(hideC, label('Ocultar o post em destaque por padrão em todos os tópicos', hideC));
+        hint('Em cada tópico você ainda pode usar "Exibir" ou "Ocultar". Posts fixados pelo autor e marcados por você ignoram o mínimo de curtidas e o limite de idade.');
+
+        const bar = mk('display:flex;gap:8px;justify-content:flex-end;margin-top:6px;');
+        const mkBtn = (text, cls) => { const b = mk('', text, 'button'); b.type = 'button'; b.className = cls; return b; };
+        const reset = mkBtn('Restaurar padrão', 'vk-ar-act vk-ar-close');
+        const cancel = mkBtn('Cancelar', 'vk-ar-act vk-ar-close');
+        const ok = mkBtn('Salvar', 'vk-ar-act vk-ar-primary');
+        bar.append(reset, cancel, ok);
+        box.appendChild(bar);
+        ov.appendChild(box);
+
+        const close = () => { document.removeEventListener('keydown', onKey, true); ov.remove(); topCfgOpen = false; };
+        const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+        document.addEventListener('keydown', onKey, true);
+        ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+        cancel.addEventListener('click', close);
+        reset.addEventListener('click', () => {
+            minI.value = '3'; ageC.checked = false; ageI.value = '12'; hideC.checked = false; syncAge();
+        });
+        ok.addEventListener('click', () => {
+            const before = topCfg();
+            const next = {
+                minLikes: cfgInt(minI.value, 1, 9999, 3),
+                ageOn: ageC.checked,
+                ageMonths: cfgInt(ageI.value, 1, 240, 12),
+                hideDefault: hideC.checked
+            };
+            topCfgSave(next);
+            if (next.hideDefault !== before.hideDefault && topState.key) {
+                topState.hidden = topHiddenFor(topState.key);   // o padrão mudou: este tópico segue o novo padrão (a menos que tenha exceção)
+            }
+            if (next.ageOn !== before.ageOn || next.ageMonths !== before.ageMonths) topState.last = 0;   // refaz a varredura com o novo filtro de idade
+            log('Post em destaque: configurações salvas', JSON.stringify(next));
+            close();
+            renderTopLiked();
+        });
+        (document.body || document.documentElement).appendChild(ov);
+    }
+
     function buildTopBar(best, likes, mode, kind, canToggle) {
         const bar = document.createElement('div');
         bar.className = 'ar-top-bar';
@@ -4428,6 +4530,7 @@
         acts.className = 'ar-top-actions';
         if (mode === 'collapsed') {
             acts.appendChild(topBtn('Exibir', 'Mostrar o post em destaque neste tópico', false, () => topSetHidden(false)));
+            acts.appendChild(topIconBtn(CFG_ICON, false, '', 'Configurações do post em destaque', topSettingsOpen));
         } else {
             if (mode === 'card' && TOP_LIKED_COMPACT) {
                 const exp = topIsExpanded();
@@ -4456,6 +4559,7 @@
                                              () => topMarkToggle(String(best.id))));
             }
             icons.appendChild(topIconBtn(HELP_ICON, false, '', 'O que é o post em destaque?', () => { if (!introOpen) introShow(true); }));
+            icons.appendChild(topIconBtn(CFG_ICON, false, '', 'Configurações do post em destaque', topSettingsOpen));
             if (icons.childNodes.length) acts.appendChild(icons);
             if (mode === 'card') acts.appendChild(topBtn('Ir para o comentário', 'Rolar até o comentário original', false, () => goToQuoted(best.id)));
             else if (mode === 'bar') {   // o destacado é justamente o 1º comentário desta página: não há para onde ir
@@ -4476,6 +4580,40 @@
         return pickTemplate(withCount.length ? withCount : natives);
     }
 
+        // Por que não há post em destaque agora (texto da faixa vazia)
+    function topEmptyReason() {
+        const c = topCfg(), best = topState.best;
+        if (!topState.final) return 'procurando…';
+        if (topState.markId && !topState.mark && !topState.markGone) return 'carregando o post marcado…';
+        if (best && topTooOld(best)) return 'posts com mais de ' + c.ageMonths + (c.ageMonths === 1 ? ' mês ignorados' : ' meses ignorados');
+        if (best && topLikedCount(best) < c.minLikes) {
+            const n = topLikedCount(best);
+            return 'o mais curtido tem ' + n + (n === 1 ? ' curtida' : ' curtidas') + ' (mínimo configurado: ' + c.minLikes + ')';
+        }
+        if (c.ageOn && topState.skippedOld > 0) return 'nenhum post com curtidas dentro de ' + c.ageMonths + (c.ageMonths === 1 ? ' mês' : ' meses');
+        return 'nenhum comentário com curtidas ainda';
+    }
+
+    function buildEmptyBar(reason) {
+        const bar = document.createElement('div');
+        bar.className = 'ar-top-bar';
+        const title = document.createElement('span');
+        title.className = 'ar-top-title';
+        title.textContent = TOP_TITLES.liked;
+        const meta = document.createElement('span');
+        meta.className = 'ar-top-meta';
+        meta.textContent = '· ' + reason;
+        const acts = document.createElement('span');
+        acts.className = 'ar-top-actions';
+        const icons = document.createElement('span');
+        icons.className = 'ar-top-icons';
+        icons.appendChild(topIconBtn(HELP_ICON, false, '', 'O que é o post em destaque?', () => { if (!introOpen) introShow(true); }));
+        icons.appendChild(topIconBtn(CFG_ICON, false, '', 'Configurações do post em destaque', topSettingsOpen));
+        acts.appendChild(icons);
+        bar.append(title, meta, acts);
+        return bar;
+    }
+
     function renderTopLiked() {
         const feat = topFeatured();
         const best = feat ? feat.item : null;
@@ -4484,7 +4622,7 @@
         const canToggle = topCanToggle();
         let card = document.querySelector('[data-ar-top]');
         const likes = topLikedCount(best);
-        if (!best && !gone) { if (card || document.querySelector('[data-ar-top-orig]')) removeTopLikedCard(); return; }
+        const empty = !best && !gone;   // sem post elegível: mostra a faixa explicando o motivo
         const all = commentNodes(document);
         const natives = all.filter(n => !n.hasAttribute('data-ar-new') && !n.hasAttribute('data-ar-dup'));
         if (!all.length) return;   // lista ainda não desenhada
@@ -4502,10 +4640,11 @@
             const blk = findFirstPostBlock();
             if (blk && !blk.hasAttribute('data-ar-hidefirst') && blk.getBoundingClientRect().height > 0) { firstBlk = blk; orig = blk; inplace = true; }
         }
-        const mode = gone ? 'warn' : (topState.hidden ? 'collapsed' : (inplace ? 'bar' : 'card'));
+        const mode = gone ? 'warn' : (topState.hidden ? 'collapsed' : (empty ? 'empty' : (inplace ? 'bar' : 'card')));
         if (mode === 'card' && !natives.length) return;   // sem comentário para servir de molde
 
-        const sig = gone ? ['warn', topState.markId, topNextKind('mark') || ''].join('|') : [best.id, likes, attachSig(best), (best.text || '').length, best.likes && best.likes.user_likes ? 1 : 0, topState.limited ? 1 : 0, mode, topIsExpanded() ? 'x' : 'c', kind, canToggle ? 1 : 0, topNextKind(kind) || '', String(topState.markId) === String(best.id) ? 1 : 0, PIN_ON() && viewerIsTopicAuthor() ? 1 : 0, pinnedCommentId() === String(best.id) ? 1 : 0].join('|');
+        const emptyWhy = empty ? topEmptyReason() : '';
+        const sig = empty ? ['empty', mode, emptyWhy].join('|') : gone ? ['warn', topState.markId, topNextKind('mark') || ''].join('|') : [best.id, likes, attachSig(best), (best.text || '').length, best.likes && best.likes.user_likes ? 1 : 0, topState.limited ? 1 : 0, mode, topIsExpanded() ? 'x' : 'c', kind, canToggle ? 1 : 0, topNextKind(kind) || '', String(topState.markId) === String(best.id) ? 1 : 0, PIN_ON() && viewerIsTopicAuthor() ? 1 : 0, pinnedCommentId() === String(best.id) ? 1 : 0].join('|');
 
         if (!card || card.getAttribute('data-ar-top-sig') !== sig) {
             let el;
@@ -4539,6 +4678,9 @@
                 const ow = el.querySelector('[data-testid="comment-owner"]');
                 for (let p = ow && ow.parentElement; p && p !== el; p = p.parentElement) p.setAttribute('data-ar-top-wrap', '1');
                 el.insertBefore(buildTopBar(best, likes, 'card', kind, canToggle), el.firstChild);
+            } else if (mode === 'empty') {
+                el = document.createElement('div');
+                el.appendChild(buildEmptyBar(emptyWhy));
             } else if (mode === 'warn') {
                 el = document.createElement('div');
                 el.appendChild(buildMarkGoneBar());
@@ -4548,7 +4690,7 @@
             }
             el.setAttribute('data-ar-top', '1');
             el.setAttribute('data-ar-top-mode', mode);
-            el.setAttribute('data-ar-top-id', String(gone ? topState.markId : best.id));
+            el.setAttribute('data-ar-top-id', String(gone ? topState.markId : (best ? best.id : '')));
             if (mode === 'card' && TOP_LIKED_COMPACT) el.setAttribute(topIsExpanded() ? 'data-ar-top-exp' : 'data-ar-top-compact', '1');
             el.setAttribute('data-ar-top-sig', sig);
             if (card) card.replaceWith(el);
@@ -4574,7 +4716,7 @@
         {
             const vis = n => !n.hasAttribute('data-ar-dup') && !n.hasAttribute('data-ar-deleted') && n.style.display !== 'none';
             const pool = (mode === 'bar' && !firstBlk) ? all.slice(all.indexOf(orig) + 1) : all;
-            const nx = mode === 'collapsed' ? null : (pool.find(vis) || null);
+            const nx = (mode === 'collapsed' || mode === 'empty') ? null : (pool.find(vis) || null);
             document.querySelectorAll('[data-ar-top-next]').forEach(e => { if (e !== nx) e.removeAttribute('data-ar-top-next'); });
             if (nx && !nx.hasAttribute('data-ar-top-next')) nx.setAttribute('data-ar-top-next', '1');
         }
@@ -4617,7 +4759,7 @@
             // Tópico recente (últimos ~6 meses): só os últimos TOP_LIKED_RECENT_LAST_N posts (sem aviso no cartão)
             const lastN = oldTopic ? TOP_LIKED_OLD_LAST_N : TOP_LIKED_RECENT_LAST_N;
             const start = Math.max(0, total - lastN);
-            let lidos = 0, lotes = 0;
+            let lidos = 0, lotes = 0, skippedOld = 0;
             let off = start;
             while (off < total && off - start < TOP_LIKED_MAX_SCAN) {
                 if (topState.key !== myKey || !isTopic()) return;
@@ -4629,6 +4771,7 @@
                 if (!items.length) break;
                 for (const it of items) {
                     if (String(it.id) === firstId) continue;
+                    if (topTooOld(it)) { skippedOld++; continue; }   // configuração: não destacar posts antigos
                     const lc = it.likes && it.likes.count || 0;
                     if (lc > 0 && (!best || lc > best.likes.count)) best = it;
                 }
@@ -4664,7 +4807,7 @@
             } else {
                 log('Post fixado pelo autor: a varredura leu o 1º post antes da edição; mantendo o post que o autor acabou de fixar');
             }
-            topState.best = best; topState.authors = authors; topState.final = true; topState.limited = limited;
+            topState.best = best; topState.authors = authors; topState.final = true; topState.limited = limited; topState.skippedOld = skippedOld;
             topState.total = total; topState.last = Date.now();
             saveTopCache(myKey);
             renderTopLiked();
@@ -4705,7 +4848,7 @@
         if (!isTopic()) { if (topState.key) { topState.key = null; topState.best = null; topState.pin = null; topState.mark = null; topState.markId = null; topState.final = false; removeTopLikedCard(); } return; }
         const key = topLikedKey();
         if (topState.key !== key) {
-            Object.assign(topState, { key, best: null, pin: null, view: null, mark: null, markId: (TOP_MARK_BY_USER && (marksRead()[key] || {}).id) ? String(marksRead()[key].id) : null, markGone: false, markBusy: false, markRetryAt: 0, markAuthors: {}, authorId: null, pinLocalAt: 0, pinMarkAt: 0, pinDeadId: null, pinAuthors: {}, pinPollAt: 0, authors: {}, last: 0, total: 0, final: false, limited: false, hidden: !!topHiddenRead()[key] });
+            Object.assign(topState, { key, best: null, pin: null, view: null, mark: null, markId: (TOP_MARK_BY_USER && (marksRead()[key] || {}).id) ? String(marksRead()[key].id) : null, markGone: false, markBusy: false, markRetryAt: 0, markAuthors: {}, authorId: null, pinLocalAt: 0, pinMarkAt: 0, pinDeadId: null, pinAuthors: {}, pinPollAt: 0, authors: {}, last: 0, total: 0, final: false, limited: false, skippedOld: 0, hidden: topHiddenFor(key) });
             removeTopLikedCard();
             topExpanded.clear(); topExpandedPage = null;   // outro tópico: volta ao compacto
             const c = loadTopCache(key);
@@ -5884,6 +6027,7 @@
         navStamp = Date.now();
         tick.tail = null;
         document.querySelectorAll('[data-ar-new]').forEach(n => n.remove());
+        document.querySelectorAll('[data-ar-ownlist]').forEach(n => n.remove());
         log('Troca de página (' + why + '): cópias removidas e consulta em andamento descartada');
     }
     document.addEventListener('click', e => {
@@ -6124,6 +6268,27 @@
         });
     }
 
+    // Tópico só com o 1º post: o VK não desenha a lista e o shim só a marca quando há comentário com data-comment-offset.
+    // Cria um contêiner próprio logo abaixo do 1º post (acima da caixa de resposta) para os novos entrarem.
+    function ensureOwnList() {
+        const blk = findFirstPostBlock() || findPinnedPost();
+        if (!blk || !document.querySelector(INPUT_SEL)) return null;
+        // sobe só enquanto o bloco for filho único do pai (wrappers sem irmãos): assim a âncora nunca ultrapassa o espaçador
+        let anchor = blk;
+        while (anchor.parentElement && anchor.parentElement !== document.body &&
+               anchor.parentElement.children.length === 1 &&
+               !anchor.parentElement.querySelector(INPUT_SEL)) anchor = anchor.parentElement;
+        // se o irmão seguinte for só um divisor fino (sem texto, até ~4 px), a lista entra depois dele, como na lista nativa
+        const nx = anchor.nextElementSibling;
+        if (nx && !nx.textContent.trim() && nx.getBoundingClientRect().height <= 4 && !nx.querySelector(INPUT_SEL)) anchor = nx;
+        const list = document.createElement('div');
+        list.setAttribute('data-ar-ownlist', '1');
+        list.setAttribute('data-testid', 'board-comments-list');
+        anchor.insertAdjacentElement('afterend', list);
+        log('Tópico sem lista nativa: contêiner próprio criado abaixo do 1º post | âncora:', anchor.tagName, (anchor.className || '').toString().slice(0, 80));
+        return list;
+    }
+
     async function tick() {
         if (busy || !document.body) return;
         if (!isTopic()) { status('⏸ fora de um tópico: sem consultas'); return; }        const tabMode = tabRole();
@@ -6133,7 +6298,11 @@
         const epoch = navEpoch;
         try {
             if (Date.now() - navStamp < NAV_SETTLE_MS) return;   // o VK ainda está trocando de página
-            const liveList = document.querySelector(LIST_SEL);
+            const nativeRoot = [...document.querySelectorAll('[data-comment-offset]')].some(n => !n.closest('[data-ar-new],[data-ar-top],[data-ar-ownlist]'));
+            const ownList = document.querySelector('[data-ar-ownlist]');
+            if (nativeRoot && ownList) { ownList.remove(); log('O VK desenhou a lista nativa; contêiner próprio removido'); return; }
+            let liveList = document.querySelector(LIST_SEL);
+            if (!liveList && !nativeRoot) liveList = ensureOwnList();
             if (!liveList) { status('⚠ lista de comentários não encontrada'); return; }
             if (!tpl && !base) seedBaseFromPage();
             if (!tpl) synthTpl();
@@ -6635,7 +6804,7 @@
         const list = [
             C('api', 'consulta à API do VK', true, tpl ? 1 : 0, 'tudo que usa a API: comentários novos, curtir, citações, post em destaque', 4),
             C('falhas', 'consultas à API falhando', true, failures >= 3 ? 0 : 1, 'atualização automática dos comentários', 1),
-            C('offset', 'data-comment-offset nos comentários', blocks > 0, rows.length, 'janela da API, página atual, comentários novos, camada de compatibilidade'),
+            C('offset', 'data-comment-offset nos comentários', (blocks - (findPinnedPost() ? 1 : 0)) > 0, rows.length, 'janela da API, página atual, comentários novos, camada de compatibilidade'),
             C('ids', 'identificação dos comentários (' + tagged + '/' + rows.length + ')', has, tagged >= rows.length ? 1 : 0, 'comentários novos, duplicatas, excluir, editar, curtir, destaque', 3),
             C('lista', 'lista de comentários', has, healthN('[data-testid="board-comments-list"]'), 'ciclo principal: sem isso nenhum comentário novo é acrescentado')
         ];
