@@ -11,7 +11,7 @@ SalvaVK.modules.register({
         const legacyStorage = api.storage;
         const LS = api.storage.forModule('games');
         const mk = api.ui.mk;
-        const DEBUG = true;
+        const DEBUG = false;
         const log = (...a) => DEBUG && console.log('[Salva VK · Jogos]', ...a);
         const esc = s => String(s == null ? '' : s)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -43,9 +43,9 @@ SalvaVK.modules.register({
         futnatv:   ['https://futnatv.net'],
         ppvApi:    ['https://api.ppv.st'],
         ppvSite:   ['https://ppv.st'],
-        rdcApi:    ['https://api.reidoscanais.im', 'https://api.reidoscanais.my', 'https://api.reidoscanais.cam'],   // tenta na ordem
-        rdcSite:   ['https://reidoscanais.im/'],
-        rdcAgenda: ['https://reidoscanais.im/agenda']
+        rdcApi:    ['https://api.reidoscanais.my', 'https://api.reidoscanais.cam'],   // tenta na ordem
+        rdcSite:   ['https://reidoscanais.cam'],
+        rdcAgenda: ['https://reidoscanais.si/agenda']
     };
     const HOSTS_DEFAULT = JSON.parse(JSON.stringify(HOSTS));
 
@@ -132,55 +132,11 @@ SalvaVK.modules.register({
     let rdcRenderSeq = 0;   // evita que uma busca antiga sobrescreva a mais nova
 
     async function rdcGetText(url, options = {}) {
-        const parsedUrl = new URL(url);
-    
-        const rdcApiHosts = new Set([
-            'api.reidoscanais.im',
-            'api.reidoscanais.my',
-            'api.reidoscanais.cam'
-        ]);
-    
-        // API do Rei dos Canais: consulta direta, sem passar
-        // pela restrição de destinos do núcleo SalvaVK.
-        if (rdcApiHosts.has(parsedUrl.hostname)) {
-            if (parsedUrl.protocol !== 'https:') {
-                throw new Error('Protocolo não permitido para a API do Rei');
-            }
-    
-            const controller = new AbortController();
-            const timeout = setTimeout(
-                () => controller.abort(),
-                options.timeout || 20000
-            );
-    
-            try {
-                const response = await fetch(parsedUrl.href, {
-                    method: 'GET',
-                    headers: options.headers || {},
-                    mode: 'cors',
-                    credentials: 'omit',
-                    cache: 'no-store',
-                    signal: controller.signal
-                });
-    
-                if (!response.ok) {
-                    throw new Error('HTTP ' + response.status);
-                }
-    
-                return await response.text();
-            } finally {
-                clearTimeout(timeout);
-            }
-        }
-    
-        // Demais fontes continuam usando a rede pública do SalvaVK.
         const response = await api.network.request({
-            method: 'GET',
-            url,
+            method: 'GET', url,
             timeout: options.timeout || 20000,
             headers: options.headers || {}
         });
-    
         return response.responseText;
     }
 
@@ -250,32 +206,33 @@ SalvaVK.modules.register({
         return true;
     }
 
-    // Casamento entre fontes: prioriza os dois times; como reserva, aceita um time
-    // reconhecível quando o horário é praticamente igual (nomes abreviados/alternativos).
+    // Casamento flexível (vale para qualquer time, sem lista de apelidos): se nenhuma fonte tem os DOIS times com nome
+    // parecido, aceita o jogo que começa no mesmo horário (até RDC_KICKOFF_TOL_MS de diferença) e tem UM dos times com
+    // exatamente o mesmo nome. Um time não joga duas partidas ao mesmo tempo, então o outro lado só pode ser o mesmo
+    // clube escrito de outro jeito (Atlético-MG / Atlético Mineiro, Operário-PR / Operário Ferroviário...).
     const RDC_KICKOFF_TOL_MS = 30 * 60 * 1000;
-    const RDC_GAME_MATCH_MAX_MS = 4 * 3600 * 1000;
+    const rdcSameTeam = (a, b) => {
+        const ta = rdcTokens(a), tb = rdcTokens(b);
+        return ta.length > 0 && ta.length === tb.length && ta.every(w => tb.includes(w));
+    };
+    // acha na lista o jogo equivalente a "want" ({ title, startMs }); pick(x) devolve { title, startMs } de um item da lista
     function rdcBestMatch(want, list, pick) {
+        const strict = list.find(x => rdcSameGame(want, pick(x)));   // 1º: comparação normal (os dois times parecidos)
+        if (strict) return strict;
         const pw = rdcParseTitle(want.title);
-        if (!pw) return null;
-        let best = null, bestScore = 0, bestDelta = Infinity;
+        if (!pw || !Number.isFinite(want.startMs)) return null;
+        let best = null, bestN = 0;
         list.forEach(x => {
             const y = pick(x);
-            if (!y || !Number.isFinite(y.startMs) || !Number.isFinite(want.startMs)) return;
-            const delta = Math.abs(want.startMs - y.startMs);
-            if (delta > RDC_GAME_MATCH_MAX_MS) return;
+            if (!Number.isFinite(y.startMs) || Math.abs(want.startMs - y.startMs) > RDC_KICKOFF_TOL_MS) return;
             const py = rdcParseTitle(y.title);
             if (!py) return;
             const [a0, a1] = pw.teams, [b0, b1] = py.teams;
-            const direct = (rdcSameSide(a0, b0) ? 1 : 0) + (rdcSameSide(a1, b1) ? 1 : 0);
-            const reverse = (rdcSameSide(a0, b1) ? 1 : 0) + (rdcSameSide(a1, b0) ? 1 : 0);
-            const score = Math.max(direct, reverse);
-            // Dois times reconhecidos: tolerância de até 4h. Um só: exige horário até 30 min.
-            if (score < 2 && (score < 1 || delta > RDC_KICKOFF_TOL_MS)) return;
-            if (score > bestScore || (score === bestScore && delta < bestDelta)) {
-                best = x; bestScore = score; bestDelta = delta;
-            }
+            const n = Math.max((rdcSameTeam(a0, b0) ? 1 : 0) + (rdcSameTeam(a1, b1) ? 1 : 0),
+                               (rdcSameTeam(a0, b1) ? 1 : 0) + (rdcSameTeam(a1, b0) ? 1 : 0));
+            if (n > bestN) { best = x; bestN = n; }
         });
-        if (best) log('Jogo casado:', want.title, '=', pick(best).title, 'pontuação:', bestScore, 'diferença (min):', Math.round(bestDelta / 60000));
+        if (best) log('Jogo casado pelo horário + um time:', want.title, '=', pick(best).title);
         return best;
     }
 
@@ -557,42 +514,14 @@ SalvaVK.modules.register({
         {
             name: 'Rei dos Canais (🏴‍☠️)',
             load: async () => {
-                // A API nova usa title ("Time A x Time B"); a antiga podia usar teams.home/away.
-                // Valida o JSON antes de aceitar um host, para que uma resposta inválida/vazia
-                // de um domínio não impeça a tentativa dos próximos endereços configurados.
-                let lastErr = new Error('nenhum endereço da API do Rei dos Canais respondeu com dados válidos');
-                let json = null;
-                for (const base of HOSTS.rdcApi) {
-                    try {
-                        const txt = await rdcGetText(base + '/sports?category=Futebol');
-                        const parsed = JSON.parse(txt);
-                        if (!parsed || parsed.success === false || !Array.isArray(parsed.data)) {
-                            throw new Error('formato inesperado da API (' + base + ')');
-                        }
-                        json = parsed;
-                        break;
-                    } catch (e) {
-                        lastErr = e;
-                        log('API do Rei indisponível ou inválida:', base, e);
-                    }
-                }
-                if (!json) throw lastErr;
-                const site = HOSTS.rdcSite[0].replace(/\/$/, '');
-                return json.data.filter(ev => ev && ev.id).map(ev => {
-                    const teamsTitle = ev.teams && ev.teams.home && ev.teams.away
-                        ? ev.teams.home.name + ' x ' + ev.teams.away.name
-                        : String(ev.title || '').trim();
-                    const timestamp = Number(ev.start_timestamp);
-                    const parsedTime = ev.start_time ? Date.parse(ev.start_time) : NaN;
-                    const startMs = Number.isFinite(timestamp) && timestamp > 0
-                        ? timestamp * 1000
-                        : (Number.isFinite(parsedTime) ? parsedTime : NaN);
-                    return {
-                        title: teamsTitle,
-                        startMs,
-                        link: site + '/assistir/' + encodeURIComponent(String(ev.id))
-                    };
-                }).filter(ev => ev.title && Number.isFinite(ev.startMs));
+                // os endereços da API vêm de HOSTS.rdcApi (tenta na ordem; o primeiro que responder vale)
+                const txt = await rdcGetFirst('rdcApi', '/sports?category=Futebol');
+                const json = JSON.parse(txt);
+                return (json.data || []).filter(ev => ev && ev.id).map(ev => ({
+                    title: (ev.teams && ev.teams.home && ev.teams.away) ? ev.teams.home.name + ' x ' + ev.teams.away.name : String(ev.title || ''),
+                    startMs: ev.start_timestamp ? Number(ev.start_timestamp) * 1000 : NaN,
+                    link: HOSTS.rdcSite[0] + '/assistir/' + ev.id
+                }));
             }
         }
     ];
@@ -616,14 +545,10 @@ SalvaVK.modules.register({
         const feedCache = new Map(), items = [];
         const unresolved = [];
         await rdcPool(games.filter(e => e.kind !== 'ended'), 4, async (entry) => {
-        try {
-            const it = await resolveRdcGame(entry, feedCache, bola);
-            if (it) items.push(it);
-            else unresolved.push(entry);
-        } catch (e) {
-            log('Erro ao resolver o jogo', entry.g.home, e);
-            unresolved.push(entry);
-        }
+            try {
+                const it = await resolveRdcGame(entry, feedCache, bola);
+                if (it) items.push(it); else unresolved.push(entry);
+            } catch (e) { log('Erro ao resolver o jogo', entry.g.home, e); }
         });
         // sem YouTube e sem Bola Rolando: tenta as fontes extras (só busca se sobrou algum jogo)
         if (unresolved.length) {
