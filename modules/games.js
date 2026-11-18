@@ -76,7 +76,7 @@ SalvaVK.modules.register({
     async function refreshHosts() {
         for (const u of CFG_URLS) {
             try {
-                const cfg = JSON.parse(await (u + '?_=' + Math.floor(Date.now() / 300000)));
+                const cfg = JSON.parse(await rdcGetText(u + '?_=' + Math.floor(Date.now() / 300000)));
                 applyHosts(cfg);
                 try { LS.setJson(CFG_KEY, cfg); } catch (e) { /* ignora */ }
                 return;
