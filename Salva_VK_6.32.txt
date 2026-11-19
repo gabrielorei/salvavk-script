@@ -3750,6 +3750,12 @@
         : '🖼 Imagem(ns) oculta(s) pelo script: este comentário já tem um vídeo/tweet incorporado (YouTube/X).';
         bar.querySelector('button').textContent = show ? 'Ocultar' : 'Mostrar imagem';
         if (bar.nextElementSibling !== els[0]) els[0].insertAdjacentElement('beforebegin', bar);
+        const par = els[0].parentElement;
+        if (par && getComputedStyle(par).display === 'flex' && !par.hasAttribute('data-ar-wrap')) {
+            par.style.setProperty('flex-wrap', 'wrap', 'important');
+            par.setAttribute('data-ar-wrap', '1');
+        }
+        bar.style.setProperty('flex', '0 0 100%', 'important');
     }
 
     // --- Esconde o 1º post fixado fora da página 1 (o VK ora mostra, ora some, conforme a página) ---
@@ -3794,23 +3800,28 @@
     // Menor data-comment-offset entre os comentários normais realmente desenhados (a verdade sobre a página na tela).
     function firstPostDomMinOffset() {
         let min = null;
+        const own = ownPost && Date.now() - ownPost.t < 300000 ? String(ownPost.id) : null;
         document.querySelectorAll(COMMENT_SEL).forEach(n => {
             if (!COMMENT_ID_RE.test(idOf(n)) || n.closest('[data-ar-top]')) return;
+            const k = String(numId(n));
+            if (k === own || !msgCache.has(k)) return;   // provisório do VK: o offset dele não vale
             const o = parseInt(n.getAttribute('data-comment-offset'), 10);
             if (Number.isFinite(o) && (min === null || o < min)) min = o;
         });
         return min;
     }
 
+    let topicTotalSeen = 0;
     let firstPostHideSticky = false;   // última decisão foi "esconder": só muda para "mostrar" com prova (DOM) de que é a página 1
 
     // true = esconder, false = mostrar, null = sem informação (não mexe)
     function firstPostMustHide() {
+        if (topicTotalSeen > 0 && topicTotalSeen <= pageSizeNow()) return false;   // uma página só: sempre mostra
         const urlOff = firstPostUrlOffset();
-        if (urlOff != null && urlOff > 0) return true;           // a URL diz que não é a página 1
+        if (urlOff != null && urlOff > 0) return true;
         const dmin = firstPostDomMinOffset();
-        if (dmin != null) return dmin > 1;                       // lista na tela começa depois do início do tópico = não é a página 1
-        if (firstPostHideSticky) return true;                    // sem prova de página 1: continua escondido
+        if (dmin != null) return dmin > 1;
+        if (firstPostHideSticky) return true;
         return urlOff != null ? false : null;
     }
 
@@ -5476,6 +5487,15 @@
         if (!SINGLE_IMAGE_BASE_PX) return;
         document.querySelectorAll('[data-testid="comment-attachments"]').forEach(c => {
             if (c.querySelector('[data-testid="comment-attach-video"]')) return;   // a miniatura de vídeo não é "foto sozinha": não limitar a largura
+            // foto escondida/exibida pelo script (comentário com tweet/YouTube): não deixa o flex do pai empurrá-la
+            if (c.hasAttribute('data-ar-hp')) {
+                c.style.setProperty('margin-right', 'auto', 'important');
+                c.style.setProperty('flex', '0 0 auto', 'important');
+                c.setAttribute('data-ar-al', '1');
+            } else if (c.hasAttribute('data-ar-al')) {
+                ['margin-right', 'flex'].forEach(p => c.style.removeProperty(p));
+                c.removeAttribute('data-ar-al');
+            }
             const imgs = [...c.querySelectorAll('img')];
             if (imgs.length !== 1) { c.setAttribute('data-ar-img', String(imgs.length)); return; }
             // Proporção: o VK a informa em --media-grid-ratio; se faltar, usa o tamanho real da imagem carregada
@@ -6025,6 +6045,7 @@
     function navChanged(why) {
         navEpoch++;
         navStamp = Date.now();
+        topicTotalSeen = 0;   // novo
         tick.tail = null;
         document.querySelectorAll('[data-ar-new]').forEach(n => n.remove());
         document.querySelectorAll('[data-ar-ownlist]').forEach(n => n.remove());
@@ -6326,6 +6347,7 @@
             if (epoch !== navEpoch) return;
             const baseItems = (resp.items || []).filter(i => !i.deleted);
             const total = typeof resp.count === 'number' ? resp.count : offset + baseItems.length;
+            topicTotalSeen = total;   // novo
 
             // Rolagem contínua: se você acompanhava o fim e o tópico passou da janela, busca também o que veio depois
             // dela (de 100 em 100) e trata como parte desta tela. Só na ordem "mais antigos primeiro".
