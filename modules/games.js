@@ -43,9 +43,9 @@ SalvaVK.modules.register({
         futnatv:   ['https://futnatv.net'],
         ppvApi:    ['https://api.ppv.st'],
         ppvSite:   ['https://ppv.st'],
-        rdcApi:    ['https://api.reidoscanais.my', 'https://api.reidoscanais.cam'],   // tenta na ordem
-        rdcSite:   ['https://reidoscanais.cam'],
-        rdcAgenda: ['https://reidoscanais.si/agenda']
+        rdcApi:    ['https://api.reidoscanais.im', 'https://api.reidoscanais.my', 'https://api.reidoscanais.cam'],
+        rdcSite:   ['https://reidoscanais.im'],
+        rdcAgenda: ['https://reidoscanais.im/agenda']
     };
     const HOSTS_DEFAULT = JSON.parse(JSON.stringify(HOSTS));
 
