@@ -766,8 +766,8 @@
         if (isPost) {
             // Cadeia separada: não consome nem altera a resposta que a página recebe
             p.then(r => r.clone().json())
-                .then(j => { if (j && !j.error) onPosted(j); })
-                .catch(() => {});
+                .then(j => { if (j && !j.error) onPosted(j); else draftPostFailed(); })
+                .catch(() => { draftPostFailed(); });
         }
         return p;
     };
@@ -794,9 +794,10 @@
                 this.addEventListener('load', () => {
                     try {
                         const j = JSON.parse(this.responseText);
-                        if (j && !j.error) onPosted(j);
-                    } catch (e) { /* ignora */ }
+                        if (j && !j.error) onPosted(j); else draftPostFailed();
+                    } catch (e) { draftPostFailed(); }
                 });
+                this.addEventListener('error', () => draftPostFailed());
             }
         } catch (e) { /* ignora */ }
         if (this.__ar && String(this.__ar.url).indexOf(POST_METHOD) !== -1) body = cleanOutgoingBody(body);
@@ -3029,6 +3030,7 @@
     const ownPostPending = id => !!ownPost && String(id) === ownPost.id && Date.now() - ownPost.t < OWN_POST_GRACE_MS;
     function onPosted(j) {
         log('Comentário publicado (board.createComment OK)');
+        draftClear();   // ← NOVO
         // Guarda o id do comentário novo (a resposta traz o número, ou { comment_id }) para rolar até ele quando aparecer
         try {
             const r = j && j.response;
@@ -5903,23 +5905,31 @@
         }, 150);
     }
 
-    // Coloca o botão "↻ Atualizar" ao lado de "Criar um tópico" (copia o visual do botão do VK)
+    // Coloca o botão "↻ Atualizar Fórum" ao lado de CADA botão "Criar um tópico" da página.
+    // Ao rolar, o VK mostra um cabeçalho fixo com outro "Criar um tópico": o botão de atualizar também vai para lá.
+    const CREATE_TOPIC_RE = /^\s*(criar um tópico|create (a )?topic|создать тему)\s*$/i;
     function injectBoardRefresh() {
         if (!BOARD_REFRESH_BUTTON || !BOARD_RE.test(location.pathname)) return;
-        if (document.getElementById('vk-ar-board-refresh')) return;
-        const orig = [...document.querySelectorAll('button,a')]
-        .find(b => /^\s*(criar um tópico|create (a )?topic|создать тему)\s*$/i.test(b.textContent || ''));
-        if (!orig || !orig.parentElement) return;
-        const b = orig.cloneNode(true);
-        b.id = 'vk-ar-board-refresh';
-        ['data-testid', 'href', 'aria-label', 'target'].forEach(a => b.removeAttribute(a));
-        b.type = 'button';
-        const leaf = [...b.querySelectorAll('*')].filter(e => !e.children.length && (e.textContent || '').trim()).pop();
-        (leaf || b).textContent = '↻ Atualizar Fórum';
-        b.style.marginRight = '8px';
-        b.title = 'Atualizar a lista de tópicos';
-        b.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); refreshBoard(b); }, true);
-        orig.parentElement.insertBefore(b, orig);
+        // nosso botão que ficou sem o "Criar um tópico" ao lado (o VK trocou o cabeçalho): remove
+        document.querySelectorAll('[data-ar-board-refresh]').forEach(b => {
+            const nx = b.nextElementSibling;
+            if (!nx || !CREATE_TOPIC_RE.test(nx.textContent || '')) b.remove();
+        });
+        document.querySelectorAll('button,a').forEach(orig => {
+            if (orig.hasAttribute('data-ar-board-refresh') || !orig.parentElement || !CREATE_TOPIC_RE.test(orig.textContent || '')) return;
+            const prev = orig.previousElementSibling;
+            if (prev && prev.hasAttribute('data-ar-board-refresh')) return;   // este já tem o seu
+            const b = orig.cloneNode(true);
+            ['id', 'data-testid', 'href', 'aria-label', 'target'].forEach(a => b.removeAttribute(a));
+            b.setAttribute('data-ar-board-refresh', '1');
+            b.type = 'button';
+            const leaf = [...b.querySelectorAll('*')].filter(e => !e.children.length && (e.textContent || '').trim()).pop();
+            (leaf || b).textContent = '↻ Atualizar Fórum';
+            b.style.marginRight = '8px';
+            b.title = 'Atualizar a lista de tópicos';
+            b.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); refreshBoard(b); }, true);
+            orig.parentElement.insertBefore(b, orig);
+        });
     }
 
     // --- BLOCO NOVO (cole no lugar; o resto do handler continua igual, a partir de 'let topic = ...') ---
@@ -6776,6 +6786,193 @@
     setInterval(() => { try { injectBoardRefresh(); } catch (e) { /* ignora */ } }, 700);
     setInterval(() => { try { gotoLastComment(); } catch (e) { /* ignora */ } }, 400);
     setInterval(() => { try { renderStatus(); } catch (e) { /* ignora */ } }, 2000);
+
+    // Guarda, neste navegador, o texto que você está escrevendo na caixa de resposta de cada tópico. Se você sair da página,
+    // trocar de tópico, recarregar ou o envio falhar, o texto volta quando reabrir o tópico, com um aviso para descartar.
+    const KEEP_DRAFT = true;
+    const DRAFT_SAVE_DELAY_MS = 400;               // espera depois da última tecla antes de gravar
+    const DRAFT_MAX_AGE_MS = 2 * 24 * 3600 * 1000; // rascunho mais velho que isso é ignorado
+    const DRAFT_MAX_CHARS = 20000;
+    const DRAFT_MAX_TOPICS = 30;                   // quantos tópicos guardar (os mais recentes)
+    const DRAFT_SETTLE_MS = 1000;                  // espera a caixa de resposta "assentar" antes de recuperar o texto
+    const DRAFT_NOTICE_MS = 10000;                 // quanto tempo o aviso fica na tela
+    const DRAFT_STORE_KEY = 'vk_ar_drafts';        // { "grupo_tópico": { text, t } }
+
+    let draftPending = null, draftTimer = 0, draftBusy = false, draftSeen = null, draftHandledKey = null, draftAfterFail = false;
+    let draftNoticeEl = null, draftNoticeTimer = 0;
+
+    const draftTopicKey = () => { const m = location.pathname.match(TOPIC_RE); return m ? m[1] + '_' + m[2] : null; };
+    const draftText = el => String(el.innerText || '').replace(/\u00A0/g, ' ').replace(/[\s\u200B\uFEFF]+$/, '');
+    const draftReadAll = () => { const o = LS.json(DRAFT_STORE_KEY, {}); return o && typeof o === 'object' ? o : {}; };
+
+    function draftWrite(key, text) {   // texto vazio apaga o rascunho do tópico
+        const all = draftReadAll();
+        if (text) all[key] = { text, t: Date.now() }; else delete all[key];
+        const keep = Object.keys(all).sort((a, b) => (all[b].t || 0) - (all[a].t || 0)).slice(0, DRAFT_MAX_TOPICS);
+        const out = {};
+        keep.forEach(k => { out[k] = all[k]; });
+        LS.setJson(DRAFT_STORE_KEY, out);
+    }
+    function draftGet(key) {
+        const d = draftReadAll()[key];
+        if (!d || typeof d.text !== 'string' || !d.text.trim() || Date.now() - (d.t || 0) > DRAFT_MAX_AGE_MS) return null;
+        return d;
+    }
+
+    // Grava o que foi digitado por último (com a chave do tópico de quando foi digitado, mesmo que a página já tenha mudado)
+    function draftFlush() {
+        clearTimeout(draftTimer);
+        draftTimer = 0;
+        const p = draftPending;
+        draftPending = null;
+        if (p) draftWrite(p.key, p.text.trim() ? p.text : '');
+    }
+
+    document.addEventListener('input', e => {
+        if (!KEEP_DRAFT || draftBusy) return;
+        const box = e.target && e.target.closest && e.target.closest(INPUT_SEL);
+        const key = draftTopicKey();
+        if (!box || !key) return;
+        draftPending = { key, text: draftText(box).slice(0, DRAFT_MAX_CHARS) };
+        clearTimeout(draftTimer);
+        draftTimer = setTimeout(draftFlush, DRAFT_SAVE_DELAY_MS);
+    }, true);
+    window.addEventListener('pagehide', draftFlush);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) draftFlush(); });
+
+    // Comentário enviado com sucesso: o rascunho não serve mais
+    function draftClear() {
+        draftPending = null;
+        clearTimeout(draftTimer);
+        draftTimer = 0;
+        const key = draftTopicKey();
+        if (key) draftWrite(key, '');
+        draftNoticeHide();
+    }
+    // O envio falhou: garante que o texto esteja guardado e permite recuperá-lo se a caixa ficou vazia
+    function draftPostFailed() {
+        if (!KEEP_DRAFT) return;
+        draftFlush();
+        draftHandledKey = null;
+        draftAfterFail = true;
+    }
+
+    function draftInsert(box, text) {
+        const sx = window.scrollX, sy = window.scrollY;
+        draftBusy = true;   // as teclas "digitadas" por aqui não contam como rascunho novo
+        try {
+            box.focus({ preventScroll: true });
+            const sel = window.getSelection(), r = document.createRange();
+            r.selectNodeContents(box);
+            r.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(r);
+            text.split('\n').forEach((line, i) => {
+                if (i) document.execCommand('insertLineBreak');
+                if (line) document.execCommand('insertText', false, line);
+            });
+        } catch (e) {
+            log('Rascunho: falha ao inserir o texto:', e);
+        } finally {
+            draftBusy = false;
+        }
+        setTimeout(() => { if (Math.abs(window.scrollY - sy) > 4) window.scrollTo(sx, sy); }, 150);   // focar a caixa não pode mover a página
+        return !!draftText(box);
+    }
+
+    function draftNoticeHide() {
+        clearTimeout(draftNoticeTimer);
+        if (draftNoticeEl && draftNoticeEl.parentNode) draftNoticeEl.parentNode.removeChild(draftNoticeEl);
+        draftNoticeEl = null;
+    }
+
+    function draftAge(t) {
+        const m = Math.floor(Math.max(0, Date.now() - t) / 60000);
+        if (m < 1) return 'há poucos segundos';
+        if (m < 60) return 'há ' + m + ' min';
+        const h = Math.floor(m / 60);
+        if (h < 24) return 'há ' + h + ' h';
+        const dd = Math.floor(h / 24);
+        return 'há ' + dd + (dd === 1 ? ' dia' : ' dias');
+    }
+
+    function draftNotice(key, d, box) {
+        draftNoticeHide();
+        const th = themeColors();
+        const el = mk('position:fixed;left:0;top:0;z-index:99998;opacity:0;visibility:hidden;' +
+                      'display:flex;align-items:center;gap:10px;padding:6px 8px 6px 14px;border-radius:10px;white-space:nowrap;' +
+                      'font:13px/1.3 -apple-system,BlinkMacSystemFont,Roboto,"Segoe UI",sans-serif;' +
+                      'box-shadow:0 1px 4px rgba(0,0,0,.12);border:1px solid rgba(128,128,128,.4);' +
+                      'transition:opacity .2s;' +
+                      'background:' + th.bg + ';color:' + th.color + ';');
+        el.id = 'vk-ar-draft-notice';
+        el.setAttribute('role', 'status');
+        el.__key = key;
+        el.appendChild(mk('font-weight:500;', (draftAfterFail ? 'Envio falhou · rascunho recuperado' : 'Rascunho recuperado') + ' · salvo ' + draftAge(d.t), 'span'));
+        draftAfterFail = false;
+        const BTN = 'cursor:pointer;border:0;border-radius:6px;padding:3px 10px;font:inherit;font-size:12px;font-weight:500;line-height:1.4;';
+        const discard = mk(BTN + 'background:rgba(128,128,128,.16);color:inherit;', 'Descartar', 'button');
+        const ok = mk(BTN + 'background:rgba(42,120,220,.2);color:inherit;', 'OK', 'button');
+        discard.type = ok.type = 'button';
+        discard.addEventListener('click', () => {
+            draftBusy = true;
+            try {
+                if (box.isConnected) {
+                    box.focus({ preventScroll: true });
+                    document.execCommand('selectAll');
+                    document.execCommand('delete');
+                }
+            } catch (e) { log('Rascunho: falha ao limpar a caixa:', e); } finally { draftBusy = false; }
+            draftPending = null;
+            clearTimeout(draftTimer);
+            draftWrite(key, '');
+            draftNoticeHide();
+        });
+        ok.addEventListener('click', draftNoticeHide);
+        el.append(discard, ok);
+        draftNoticeEl = el;
+        (document.body || document.documentElement).appendChild(el);
+
+        // Fica logo acima da caixa de resposta (acompanha a caixa se a página rolar ou mudar de tamanho)
+        const place = () => {
+            if (draftNoticeEl !== el) return;
+            if (!box.isConnected) { draftNoticeHide(); return; }
+            const r = box.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+            let top = r.top - h - 8;
+            if (top < 8) top = r.bottom + 8;   // sem espaço em cima: vai para baixo da caixa
+            el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+            el.style.top = top + 'px';
+            el.style.visibility = 'visible';
+        };
+        place();
+        requestAnimationFrame(() => { el.style.opacity = '1'; });
+        const follow = setInterval(() => { if (draftNoticeEl !== el) clearInterval(follow); else place(); }, 150);
+        draftNoticeTimer = setTimeout(draftNoticeHide, DRAFT_NOTICE_MS);
+    }
+
+    // Roda de tempos em tempos: quando a caixa de resposta do tópico aparece vazia e há rascunho guardado, devolve o texto
+    function draftTick() {
+        if (draftNoticeEl && (!isTopic() || draftNoticeEl.__key !== draftTopicKey())) draftNoticeHide();   // saiu do tópico: o aviso some
+        if (!KEEP_DRAFT || !isTopic() || document.hidden) return;
+        const key = draftTopicKey(), box = document.querySelector(INPUT_SEL);
+        if (!key || !box || !box.isConnected) { draftSeen = null; return; }
+        if (draftHandledKey === key) return;   // já tratado neste tópico
+        if (!draftSeen || draftSeen.box !== box || draftSeen.key !== key) { draftSeen = { box, key, at: Date.now() }; return; }
+        if (Date.now() - draftSeen.at < DRAFT_SETTLE_MS) return;   // deixa o VK terminar de montar a caixa
+        const d = draftGet(key);
+        if (!d || draftText(box)) { draftHandledKey = key; draftAfterFail = false; return; }   // nada a recuperar, ou a caixa já tem texto (não sobrescreve)
+        const a = document.activeElement;
+        if (a && a !== box && a !== document.body && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;   // digitando em outro campo: tenta depois
+        draftHandledKey = key;
+        if (draftInsert(box, d.text)) {
+            log('Rascunho recuperado (' + d.text.length + ' caracteres) no tópico', key);
+            draftNotice(key, d, box);
+        } else {
+            draftAfterFail = false;
+            log('Rascunho: o editor não aceitou o texto; o rascunho continua guardado');
+        }
+    }
+    setInterval(() => { try { draftTick(); } catch (e) { /* ignora */ } }, 600);
 
     // ===== AUTOTESTE (v6.32) =====
     // Confere de tempos em tempos se as "âncoras" de que o script depende ainda existem na página do tópico.
