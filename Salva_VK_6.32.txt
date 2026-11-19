@@ -21,6 +21,8 @@
 // @connect      futnatv.net
 // @connect      api.reidoscanais.cam
 // @connect      api.reidoscanais.my
+// @connect      api.reidoscanais.im
+// @connect      reidoscanais.im
 // @connect      reidoscanais.my
 // @connect      esportenacional.com
 // @connect      api.ppv.st
@@ -7037,7 +7039,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
         // Enquanto o snapshot em cache for recente, o carregador não vai à rede (zero requisições por página).
         // Depois disso, confere só o manifesto e baixa apenas os módulos cujo SHA-256 mudou.
         const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
-        let state = 'idle', lastError = null, loadedRelease = null, loadedCount = 0, pending = null, sourceMode = null;
+        let state = 'idle', lastError = null, loadedRelease = null, loadedCount = 0, pending = null, sourceMode = null, lastOrigin = null;
 
         function byteLength(value) { return new TextEncoder().encode(value).length; }
         async function digest(value) {
@@ -7101,41 +7103,210 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             if (byteLength(entry.source) > MAX_MODULE_BYTES || await digest(entry.source) !== want) return null;
             return entry.source;
         }
+        // ===== Plano B de rede =====
+        // O worker é a origem principal. As demais origens servem o mesmo conteúdo do repositório e só funcionam
+        // enquanto ele estiver acessível publicamente (com o repositório privado respondem 404 e são ignoradas).
+        // Como cada módulo é conferido pelo SHA-256 do manifesto, uma origem alternativa não precisa ser confiável.
+        const MIRROR_REPO = 'gabrielorei/salvavk-script';
+        const MIRROR_BRANCH = 'feature/modularizacao';
+        const ORIGIN_KEY = 'SalvaVK_ModuleOrigin_v1';
+        const BACKOFF_KEY = 'SalvaVK_ModuleBackoff_v1';
+        const NOTICE_KEY = 'SalvaVK_ModuleNoticeAt_v1';
+        const MANIFEST_TIMEOUT_MS = 8000, MODULE_TIMEOUT_MS = 20000;      // por origem
+        const BACKOFF_BASE_MS = 2 * 60 * 1000, BACKOFF_MAX_MS = 30 * 60 * 1000;
+        const ORIGIN_MEMORY_MS = 24 * 60 * 60 * 1000;   // depois disso o worker volta a ser tentado primeiro
+        const NOTICE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+        const SHA_REF_RE = /^[a-f0-9]{40}$/i;
+        const ORIGINS = Object.freeze([
+            Object.freeze({
+                id: 'worker',
+                manifestUrl: () => MANIFEST_URL,
+                moduleUrl: item => item.url
+            }),
+            Object.freeze({
+                id: 'github-raw',
+                manifestUrl: () => 'https://raw.githubusercontent.com/' + MIRROR_REPO + '/' + MIRROR_BRANCH + '/modules/manifest.json',
+                moduleUrl: (item, ref, file) => ref ? 'https://raw.githubusercontent.com/' + MIRROR_REPO + '/' + ref + '/modules/' + file : null
+            }),
+            Object.freeze({
+                id: 'jsdelivr',
+                manifestUrl: () => 'https://cdn.jsdelivr.net/gh/' + MIRROR_REPO + '@' + MIRROR_BRANCH + '/modules/manifest.json',
+                moduleUrl: (item, ref, file) => ref ? 'https://cdn.jsdelivr.net/gh/' + MIRROR_REPO + '@' + ref + '/modules/' + file : null
+            })
+        ]);
+        const errText = e => String(e && e.message || e);
+        function storeGet(key, fallback) {
+            try { return typeof GM_getValue === 'function' ? GM_getValue(key, fallback) : fallback; } catch (e) { return fallback; }
+        }
+        function storeSet(key, value) {
+            try { if (typeof GM_setValue === 'function') GM_setValue(key, value); } catch (e) { log('Falha ao gravar estado do carregador:', e); }
+        }
+        function readJson(key) {
+            const v = storeGet(key, null);
+            if (!v) return null;
+            try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (e) { return null; }
+        }
+        // Ordem de tentativa: a última origem que funcionou vai primeiro (espelho só vale por 24 h).
+        function orderedOrigins() {
+            const mem = readJson(ORIGIN_KEY);
+            const first = mem && ORIGINS.find(o => o.id === mem.id);
+            const fresh = first && (first.id === 'worker' || (Number.isFinite(mem.at) && Date.now() - mem.at >= 0 && Date.now() - mem.at < ORIGIN_MEMORY_MS));
+            return fresh ? [first, ...ORIGINS.filter(o => o !== first)] : ORIGINS.slice();
+        }
+        function rememberOrigin(origin) {
+            lastOrigin = origin.id;
+            const mem = readJson(ORIGIN_KEY);
+            // Regrava o carimbo de tempo só quando a origem muda, para o worker ser reavaliado a cada 24 h.
+            if (!mem || mem.id !== origin.id) storeSet(ORIGIN_KEY, JSON.stringify({ id: origin.id, at: Date.now() }));
+        }
+        // Intervalo entre tentativas após falha total: 2, 4, 8, 16 e no máximo 30 min (entre páginas e abas).
+        function backoffActive() {
+            const b = readJson(BACKOFF_KEY);
+            if (!b || !Number.isFinite(b.until)) return false;
+            const left = b.until - Date.now();
+            return left > 0 && left <= BACKOFF_MAX_MS;
+        }
+        function recordNetworkFailure() {
+            const prev = readJson(BACKOFF_KEY);
+            const fails = Math.min(((prev && Number.isFinite(prev.fails)) ? prev.fails : 0) + 1, 10);
+            const delay = Math.min(BACKOFF_BASE_MS * Math.pow(2, fails - 1), BACKOFF_MAX_MS);
+            storeSet(BACKOFF_KEY, JSON.stringify({ fails, until: Date.now() + delay }));
+        }
+        function clearBackoff() {
+            if (readJson(BACKOFF_KEY)) storeSet(BACKOFF_KEY, '');
+        }
+        async function fetchText(url, timeout, limit, label) {
+            const response = await SalvaVK.network.request({ url, method: 'GET', timeout, headers: { 'Cache-Control': 'no-cache' } });
+            const text = String(response.responseText || '');
+            if (!text || byteLength(text) > limit) throw new Error(label + ' vazio ou excede o limite');
+            return text;
+        }
+        function allFailed(attempts) {
+            return new Error('Nenhuma origem respondeu (' + attempts.join('; ') + ')');
+        }
+        async function fetchManifest(attempts) {
+            for (const origin of orderedOrigins()) {
+                try {
+                    const raw = await fetchText(origin.manifestUrl(), MANIFEST_TIMEOUT_MS, MAX_MANIFEST_BYTES, 'Manifesto');
+                    return { manifest: validateManifest(JSON.parse(raw)), origin };
+                } catch (e) { attempts.push(origin.id + ': ' + errText(e)); }
+            }
+            throw allFailed(attempts);
+        }
+        async function fetchModule(item, preferred, attempts) {
+            const itemUrl = new URL(item.url);   // já validada por validateManifest
+            const refParam = itemUrl.searchParams.get('ref') || '';
+            const ref = SHA_REF_RE.test(refParam) ? refParam.toLowerCase() : null;   // espelhos só com commit fixo
+            const file = itemUrl.pathname.split('/').pop();
+            const order = [preferred, ...orderedOrigins().filter(o => o !== preferred)];
+            const want = item.sha256.toLowerCase();
+            for (const origin of order) {
+                const url = origin.moduleUrl(item, ref, file);
+                if (!url) continue;
+                try {
+                    const source = await fetchText(url, MODULE_TIMEOUT_MS, MAX_MODULE_BYTES, 'Módulo ' + item.id);
+                    const actual = await digest(source);
+                    if (actual !== want) throw new Error('SHA-256 não confere');
+                    return { source, sha256: actual, origin };
+                } catch (e) { attempts.push(origin.id + '/' + item.id + ': ' + errText(e)); }
+            }
+            throw allFailed(attempts);
+        }
         async function downloadSnapshot(cached) {
-            const response = await SalvaVK.network.request({ url: MANIFEST_URL, method: 'GET', timeout: 20000, headers: { 'Cache-Control': 'no-cache' } });
-            const raw = String(response.responseText || '');
-            if (!raw || byteLength(raw) > MAX_MANIFEST_BYTES) throw new Error('Manifesto vazio ou excede o limite');
-            const manifest = validateManifest(JSON.parse(raw));
+            const attempts = [];
+            const first = await fetchManifest(attempts);
+            const manifest = first.manifest;
+            let used = first.origin;
             const sources = Object.create(null);
             for (const item of manifest.modules) {
                 const kept = await reusableSource(cached, item);
                 if (kept != null) { sources[item.id] = { version: item.version, sha256: item.sha256.toLowerCase(), source: kept }; continue; }
-                const result = await SalvaVK.network.request({ url: item.url, method: 'GET', timeout: 30000, headers: { 'Cache-Control': 'no-cache' } });
-                const source = String(result.responseText || '');
-                if (!source || byteLength(source) > MAX_MODULE_BYTES) throw new Error('Módulo vazio ou excede o limite: ' + item.id);
-                const actual = await digest(source);
-                if (actual !== item.sha256.toLowerCase()) throw new Error('SHA-256 não confere para o módulo ' + item.id);
-                sources[item.id] = { version: item.version, sha256: actual, source };
+                const got = await fetchModule(item, first.origin, attempts);
+                used = got.origin;
+                sources[item.id] = { version: item.version, sha256: got.sha256, source: got.source };
             }
+            rememberOrigin(used);
+            if (attempts.length) log('Origens que falharam antes do sucesso:', attempts);
             return { savedAt: Date.now(), manifest, sources };
         }
         // Caminho único de seleção: rede primeiro; em caso de falha, valida o último snapshot íntegro.
         async function resolveSnapshot(download = downloadSnapshot, force = false) {
+            const live = download === downloadSnapshot;   // o diagnóstico injeta outra função e não pode mexer no estado
             const cached = readCache();
             const age = cached && typeof cached.savedAt === 'number' ? Date.now() - cached.savedAt : Infinity;
-            if (!force && download === downloadSnapshot && age >= 0 && age < SNAPSHOT_TTL_MS) {
+            if (!force && live && age >= 0 && age < SNAPSHOT_TTL_MS) {
                 try { return { snapshot: await verifySnapshot(cached), mode: 'cache', error: null }; } catch (e) { /* cache inválido: segue para a rede */ }
             }
+            if (!force && live && backoffActive()) {
+                const waiting = 'Servidor indisponível; aguardando o intervalo entre novas tentativas';
+                if (!cached) throw new Error(waiting);
+                return { snapshot: await verifySnapshot(cached), mode: 'cache', error: waiting };
+            }
             try {
-                return { snapshot: await download(cached), mode: 'network', error: null };
+                const snapshot = await download(cached);
+                if (live) clearBackoff();
+                return { snapshot, mode: 'network', error: null };
             } catch (networkError) {
+                if (live) recordNetworkFailure();
                 if (!cached) throw networkError;
                 return {
                     snapshot: await verifySnapshot(cached),
                     mode: 'cache',
-                    error: String(networkError && networkError.message || networkError)
+                    error: errText(networkError)
                 };
             }
+        }
+        // Aviso discreto quando nenhum módulo pôde ser carregado (sem rede para o servidor e sem cache).
+        let noticeEl = null, noticeStatus = null, noticeRetry = null;
+        function removeNotice() {
+            if (noticeEl && noticeEl.parentNode) noticeEl.parentNode.removeChild(noticeEl);
+            noticeEl = noticeStatus = noticeRetry = null;
+        }
+        function notifyFailure() {
+            try {
+                if (noticeEl) {   // aviso já aberto (ex.: nova tentativa falhou): só atualiza
+                    noticeStatus.textContent = 'Ainda sem conexão com o servidor.';
+                    noticeRetry.disabled = false; noticeRetry.textContent = 'Tentar de novo';
+                    return;
+                }
+                const last = Number(storeGet(NOTICE_KEY, 0)) || 0;
+                if (last <= Date.now() && Date.now() - last < NOTICE_INTERVAL_MS) return;   // no máximo 1 aviso a cada 6 h
+                storeSet(NOTICE_KEY, Date.now());
+                const box = document.createElement('div');
+                box.id = 'salvavk-modules-notice';
+                box.setAttribute('role', 'status');
+                box.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:2147483000;max-width:320px;padding:12px 14px;border-radius:10px;' +
+                    'background:#1f2430;color:#f2f4f8;font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.35)';
+                const title = document.createElement('div');
+                title.textContent = 'Salva VK: módulos não carregados';
+                title.style.cssText = 'font-weight:600;margin-bottom:4px';
+                const text = document.createElement('div');
+                text.textContent = 'Não foi possível carregar os módulos (reações, jogos e avisos). Se o servidor estiver bloqueado na sua rede, ' +
+                    'tente trocar o DNS (1.1.1.1 ou 8.8.8.8), usar outra rede ou uma VPN. Se persistir, atualize o script.';
+                const status = document.createElement('div');
+                status.style.cssText = 'margin-top:4px;opacity:.75';
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:8px;margin-top:10px';
+                const mkBtn = (label, primary) => {
+                    const b = document.createElement('button');
+                    b.type = 'button'; b.textContent = label;
+                    b.style.cssText = 'cursor:pointer;border:0;border-radius:6px;padding:6px 10px;font:inherit;' +
+                        (primary ? 'background:#4a76a8;color:#fff' : 'background:transparent;color:#c9d1e0;border:1px solid #4b5568');
+                    return b;
+                };
+                const retry = mkBtn('Tentar de novo', true), close = mkBtn('Fechar', false);
+                retry.addEventListener('click', () => {
+                    retry.disabled = true; retry.textContent = 'Tentando…';
+                    status.textContent = '';
+                    start(true).catch(() => { /* notifyFailure() já atualiza o aviso */ });
+                });
+                close.addEventListener('click', removeNotice);
+                row.append(retry, close);
+                box.append(title, text, status, row);
+                noticeEl = box; noticeStatus = status; noticeRetry = retry;
+                const mount = () => { if (noticeEl === box) (document.body || document.documentElement).appendChild(box); };
+                if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount, { once: true });
+            } catch (e) { log('Não foi possível exibir o aviso de módulos:', e); }
         }
         async function executeSnapshot(snapshot) {
             const selected = snapshot.manifest.modules.filter(item => item.pages.includes(SalvaVK.core.page));
@@ -7159,7 +7330,9 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             if (pending && !force) return pending;
             pending = (async () => {
                 state = 'loading'; lastError = null;
-                const resolved = await resolveSnapshot(downloadSnapshot, force);
+                let resolved;
+                try { resolved = await resolveSnapshot(downloadSnapshot, force); }
+                catch (error) { notifyFailure(); throw error; }
                 const snapshot = resolved.snapshot, mode = resolved.mode;
                 const count = await executeSnapshot(snapshot);
                 if (mode === 'network') writeCache(snapshot);
@@ -7168,6 +7341,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 sourceMode = mode;
                 lastError = resolved.error;
                 state = 'ready';
+                removeNotice();
                 return Object.freeze({ state, release: loadedRelease, source: sourceMode, modules: count });
             })().catch(error => {
                 state = 'failed';
@@ -7199,7 +7373,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             start: () => start(false),
             refresh: () => start(true),
             diagnoseCacheFallback,
-            status: () => Object.freeze({ state, release: loadedRelease, source: sourceMode, error: lastError })
+            status: () => Object.freeze({ state, release: loadedRelease, source: sourceMode, origin: lastOrigin, error: lastError })
         });
     })();
 
@@ -7297,6 +7471,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
                 const allowed = new Set([
                     'futebolgratis.org', 'www.futebolgratis.org', 'bolarolando.org',
                     'youtube.com', 'www.youtube.com', 'futnatv.net',
+                    'api.reidoscanais.im', 'reidoscanais.im',
                     'api.reidoscanais.cam', 'api.reidoscanais.my', 'reidoscanais.my', 'reidoscanais.cam', 'reidoscanais.si',
                     'api.ppv.st', 'ppv.st', 'raw.githubusercontent.com', 'cdn.jsdelivr.net',
                     'vkuserphoto.ru', 'vk.ru', 'vk.com', 'userapi.com',
