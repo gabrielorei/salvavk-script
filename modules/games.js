@@ -2,10 +2,11 @@
 // Extraído do núcleo v6.33; usa somente a API pública SalvaVK v1.
 let renderTimer = null;
 let hostsTimer = null;
+let dockHandler = null;
 
 SalvaVK.modules.register({
     id: 'games',
-    version: '1.0.0',
+    version: '1.1.0',
     apiVersion: 1,
     start(api) {
         const legacyStorage = api.storage;
@@ -744,9 +745,22 @@ SalvaVK.modules.register({
 
         toggleBtn.addEventListener('click', () => {
             const state = LS.get(RDC_STORAGE_KEY) || 'fresh';
-            LS.set(RDC_STORAGE_KEY, state === 'expanded' ? 'compact' : 'expanded');
+            const next = state === 'expanded' ? 'compact' : 'expanded';
+            LS.set(RDC_STORAGE_KEY, next);
+            if (next === 'expanded') document.dispatchEvent(new CustomEvent('salvavk:dock-open', { detail: 'games' }));   // fecha o painel de favoritos
             updateStateUI();
         });
+
+        // Quando outro painel lateral (ex.: favoritos) abre, este recolhe para não ficarem sobrepostos.
+        if (dockHandler) document.removeEventListener('salvavk:dock-open', dockHandler);
+        dockHandler = e => {
+            if (e.detail === 'games') return;
+            if ((LS.get(RDC_STORAGE_KEY) || 'fresh') === 'expanded') {
+                LS.set(RDC_STORAGE_KEY, 'compact');
+                updateStateUI();
+            }
+        };
+        document.addEventListener('salvavk:dock-open', dockHandler);
 
         const header = mk('padding:8px 12px;background:#2a5885;color:#fff;font-weight:bold;display:flex;justify-content:space-between;align-items:center;font-size:12px;');
         header.innerHTML = '<span>Clique em uma partida ↗</span>';
@@ -815,6 +829,7 @@ SalvaVK.modules.register({
         if (hostsTimer != null) clearInterval(hostsTimer);
         renderTimer = null;
         hostsTimer = null;
+        if (dockHandler) { document.removeEventListener('salvavk:dock-open', dockHandler); dockHandler = null; }
         const widget = document.getElementById('vk-ar-rdc-widget');
         if (widget) widget.remove();
     }
