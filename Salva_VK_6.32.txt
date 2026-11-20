@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salva VK
 // @namespace    local.vk.autorefresh
-// @version      6.32
+// @version      6.33
 // @description  Salva VK: atualização de comentários, mídia, destaque e reações personalizadas
 // @match        https://vk.ru/*
 // @match        https://*.vk.ru/*
@@ -161,6 +161,7 @@
     const TOP_LIKED_OLD_LAST_N = 500;      // quantos posts finais contam em tópicos antigos e grandes
     const TOP_LIKED_RECENT_LAST_N = 1000;  // tópico criado nos últimos ~6 meses (não antigo): só os últimos N posts contam (sem aviso no cartão)
     const TOP_LIKED_MAX_SCAN = 5000;       // máximo de comentários varridos por tópico
+    const TOPIC_RETRY = true;   // criar tópico: se o VK responder "Access denied" (15), repete a requisição uma vez
     const HLSJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js';   // para tocar as qualidades que o VK só entrega em HLS
     const VK_VIDEO_EMBED = true;     // vídeo do VK sem MP4 direto (privado por hash, externo, só streaming): toca no player oficial do VK (video_ext.php) em vez de só mostrar o aviso
     const VK_VIDEO_HLS = true;       // acrescenta, na caixinha de qualidade, as resoluções que só existem em HLS (sem download direto)
@@ -744,9 +745,11 @@
 
     PW.fetch = function (input, init) {
         let isPost = false;
+        let isAddTopic = false;
         try {
             const url = typeof input === 'string' ? input : (input && input.url) || '';
             if (String(url).indexOf(POST_METHOD) !== -1) isPost = true;
+            if (TOPIC_RETRY && typeof input === 'string' && String(url).indexOf('board.addTopic') !== -1) isAddTopic = true;
             if (/\/method\//.test(String(url))) learnBase(url, normHeaders(init && init.headers), init && init.body);
             if (/\/method\//.test(String(url)) && init && init.body != null) refreshAuth(url, init.body);
             if (String(url).indexOf(API_METHOD) !== -1) {
@@ -762,7 +765,21 @@
         if (isPost && init && init.body != null) {
             args = [input, Object.assign({}, init, { body: cleanOutgoingBody(init.body) })];
         }
-        const p = origFetch.apply(this, args);
+        let p = origFetch.apply(this, args);
+        if (isAddTopic) {
+            const self = this, a = args;
+            p = p.then(async r => {
+                try {
+                    const j = await r.clone().json();
+                    if (j && j.error && j.error.error_code === 15) {
+                        log('board.addTopic: Access denied (15); repetindo uma vez');
+                        await sleep(1500);
+                        return await origFetch.apply(self, a);
+                    }
+                } catch (e) { /* devolve a resposta original */ }
+                return r;
+            });
+        }
         if (isPost) {
             // Cadeia separada: não consome nem altera a resposta que a página recebe
             p.then(r => r.clone().json())
@@ -1038,7 +1055,7 @@
     }
 
     // ---------- Aviso de versão nova ----------
-    const SCRIPT_VERSION = '6.32';   // mantenha igual ao @version do cabeçalho
+    const SCRIPT_VERSION = '6.33';   // mantenha igual ao @version do cabeçalho
     const META_URL = 'https://update.greasyfork.org/scripts/600713/Salva%20VK.meta.js';
     const INSTALL_URL = 'https://update.greasyfork.org/scripts/600713/Salva%20VK.user.js';
     let newVersion = null;
@@ -1148,10 +1165,11 @@
 
     // Largura de uma imagem sozinha, proporcional ao formato (área constante)
     const imgWidthForRatio = r => {
+        // Proporção "quase 4:3" ou mais larga: sempre a largura máxima (alinhada com as demais)
+        if (SINGLE_IMAGE_FULL_W_RATIO && r >= SINGLE_IMAGE_FULL_W_RATIO) return Math.round(Math.max(SINGLE_IMAGE_MIN_PX, SINGLE_IMAGE_CAP_PX));
         const area = SINGLE_IMAGE_BASE_PX * SINGLE_IMAGE_BASE_PX * 0.75;
         let w = Math.min(SINGLE_IMAGE_CAP_PX, Math.sqrt(area * r));
-        if (SINGLE_IMAGE_FULL_W_RATIO && r >= SINGLE_IMAGE_FULL_W_RATIO) w = SINGLE_IMAGE_CAP_PX;   // 4:3, 5:4 e mais largas: largura cheia
-        if (SINGLE_IMAGE_MAX_H_PX) w = Math.min(w, SINGLE_IMAGE_MAX_H_PX * r);   // a altura (largura / proporção) não passa do limite
+        if (SINGLE_IMAGE_MAX_H_PX) w = Math.min(w, SINGLE_IMAGE_MAX_H_PX * r);   // a altura não passa do limite
         return Math.round(Math.max(SINGLE_IMAGE_MIN_PX, w));
     };
 
@@ -2345,13 +2363,151 @@
         return p;
     }
 
-    function avatarEl(photo, size) {
+    // ---------- 4b-3) Avatar de reserva: foto que o servidor do VK não entrega ----------
+    // Algumas fotos de perfil (em geral antigas) não existem mais no servidor de imagens do VK: o endereço responde 404
+    // e o círculo fica vazio. Nesses casos aparece a inicial do nome sobre uma cor fixa (a mesma sempre para o mesmo
+    // usuário) e, ao passar o mouse, a dica explicando. Vale para a foto dos comentários e para as fotos que o script desenha.
+    const AV_FALLBACK = true;                                       // false = não mexe nas fotos quebradas
+    const AV_FB_TITLE = 'Foto não carregada pelo servidor do VK';
+    const AV_FB_RETRY_MS = 8000;                                    // uma nova tentativa depois disso (o servidor também responde 429 quando pedem muita imagem de uma vez)
+    // Cores no estilo dos avatares de reserva do VK: degradê claro -> escuro, letra branca
+    const AV_PALETTE = [
+        ['#6ba6f2', '#3f8ae0'],   // azul
+        ['#5ac8f5', '#2d9cdb'],   // azul claro
+        ['#6fcf6f', '#4bb34b'],   // verde
+        ['#4fd1c5', '#2aa79b'],   // verde-água
+        ['#ffa24d', '#f2711c'],   // laranja
+        ['#ff6b6b', '#e64646'],   // vermelho
+        ['#9b7be8', '#735ce6'],   // violeta
+        ['#a8b2bd', '#818c99']    // cinza
+    ];
+
+    // Inicial e cor de quem aparece no avatar. A cor sai do nome (ou do link, se não houver nome): é a mesma nos comentários, no quadro e nas listas.
+    function avInfo(who) {
+        const o = typeof who === 'string' ? { name: who } : (who || {});
+        const name = String(o.name || '').trim();
+        const href = String(o.href || '').replace(/[?#].*$/, '').replace(/^\/+|\/+$/g, '');
+        const key = (name || href).toLowerCase();
+        let h = 5381;
+        for (const ch of key) h = ((h * 33) ^ ch.codePointAt(0)) >>> 0;
+        const pal = AV_PALETTE[h % AV_PALETTE.length];
+        const m = name.match(/[\p{L}\p{N}]/u);
+        return { letter: m ? m[0].toUpperCase() : '?', bg: 'linear-gradient(180deg,' + pal[0] + ',' + pal[1] + ')' };
+    }
+
+    const AV_HOST = '[data-testid="comment-avatar"]';
+
+    function avWho(host) {   // nome e link de quem escreveu o comentário da foto
+        const root = host.closest('[data-testid="comment"]') || host.closest('[data-testid^="board-comment-"]') || host.parentElement;
+        const ow = root && root.querySelector('[data-testid="comment-owner"]');
+        return { name: ow ? ow.textContent : '', href: host.getAttribute('href') || (ow && ow.getAttribute('href')) || '' };
+    }
+
+    // Quadro de discussões: o bloco "Respondeu em ..." de cada tópico (link para ?offset=last) traz a foto de quem respondeu por último
+    const AV_LAST = 'a[href*="/topic-"][href*="offset=last"]';
+    const AV_ANY = AV_HOST + ',' + AV_LAST;
+
+    // Onde a letra entra e de quem ela é: { host, who } ou null se essa <img> não é foto de autor
+    function avResolve(img) {
+        const c = img.closest(AV_HOST);
+        if (c) return c.closest('[data-testid="board-comment-composer"]') ? null : { host: c, who: avWho(c) };   // a caixa de resposta não tem o nome de quem escreve
+        const l = img.closest(AV_LAST);
+        if (!l || img.closest('[data-testid^="board-comment-"]') || !img.parentElement || img.parentElement === l) return null;
+        const nm = l.querySelector('span[title]');
+        return { host: img.parentElement, who: { name: nm ? (nm.getAttribute('title') || nm.textContent) : '' } };
+    }
+
+    function avApply(img) {
+        if (!AV_FALLBACK) return;
+        const r = avResolve(img);
+        if (!r) return;
+        const host = r.host;
+        const info = avInfo(r.who);
+        let fb = host.querySelector(':scope > .vk-ar-avfb');
+        const first = !fb;
+        if (first) {
+            fb = document.createElement('span');
+            fb.className = 'vk-ar-avfb';
+            fb.setAttribute('aria-hidden', 'true');
+            img.insertAdjacentElement('afterend', fb);
+        }
+        // tamanho medido antes de a <img> sumir; se a aba estiver oculta, vale o tamanho configurado
+        const size = fb.__arSize || Math.round(img.offsetWidth || AVATAR_SIZE || 28);
+        fb.__arSize = size;
+        fb.textContent = info.letter;
+        fb.style.cssText = 'width:' + size + 'px;height:' + size + 'px;font-size:' + Math.round(size * 0.46) + 'px;background:' + info.bg;
+        host.setAttribute('data-ar-avfb', '1');
+        host.title = AV_FB_TITLE;
+        if (first) log('Foto de perfil indisponível; avatar de reserva:', (img.currentSrc || img.src || '').slice(0, 110));
+        // uma única nova tentativa, bem depois: se era só o 429, a foto volta sozinha
+        if (!img.__arAvRetry && (img.currentSrc || img.src)) {
+            img.__arAvRetry = setTimeout(() => {
+                const src = img.currentSrc || img.src;
+                if (!src || !img.isConnected) return;
+                const probe = new Image();
+                probe.onload = () => { if (img.isConnected) { img.removeAttribute('src'); img.src = src; } };
+                probe.src = src;
+            }, AV_FB_RETRY_MS + Math.random() * 4000);
+        }
+    }
+
+    function avClear(img) {   // a foto carregou (de novo): tira a letra
+        const r = avResolve(img);
+        const host = r && r.host;
+        if (!host || !host.hasAttribute('data-ar-avfb')) return;
+        host.removeAttribute('data-ar-avfb');
+        host.removeAttribute('title');
+        const fb = host.querySelector(':scope > .vk-ar-avfb');
+        if (fb) fb.remove();
+    }
+
+    if (AV_FALLBACK) {
+        addStyle('[data-ar-avfb] > img{display:none !important}' +
+                 '.vk-ar-avfb{display:flex;flex:none;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;' +
+                 'color:#fff;font-family:-apple-system,BlinkMacSystemFont,Roboto,"Segoe UI",sans-serif;font-weight:600;line-height:1;' +
+                 'user-select:none;pointer-events:none}', 'vk-ar-avfb-style');
+        // erro e carregamento de imagem não "sobem" na árvore: só a captura pega (o script roda antes da página)
+        document.addEventListener('error', ev => {
+            const t = ev.target;
+            if (t && t.tagName === 'IMG' && t.closest && t.closest(AV_ANY)) { try { avApply(t); } catch (e) { /* ignora */ } }
+        }, true);
+        document.addEventListener('load', ev => {
+            const t = ev.target;
+            if (t && t.tagName === 'IMG' && t.naturalWidth > 0 && t.closest && t.closest(AV_ANY)) { try { avClear(t); } catch (e) { /* ignora */ } }
+        }, true);
+        // varredura leve: pega foto que já falhou antes do aviso e foto sem endereço (comentário novo de quem não tem foto)
+        let avTimer = 0;
+        const avSweep = () => {
+            avTimer = 0;
+            document.querySelectorAll(AV_HOST + ' img:not([data-ar-avs]),' + AV_LAST + ' img:not([data-ar-avs])').forEach(img => {
+                if (!img.complete) return;   // ainda carregando: vê de novo na próxima varredura
+                img.setAttribute('data-ar-avs', '1');
+                if (!img.getAttribute('src') || img.naturalWidth === 0) { try { avApply(img); } catch (e) { /* ignora */ } }
+            });
+        };
+        new MutationObserver(() => { if (!avTimer) avTimer = setTimeout(avSweep, 1200); })
+            .observe(document.documentElement, { childList: true, subtree: true });
+    }
+
+    // Foto redonda criada pelo script. "who" ({ name, href } ou só o nome) liga a letra de reserva.
+    function avatarEl(photo, size, who) {
         const av = mk('flex:none;width:' + size + 'px;height:' + size + 'px;border-radius:50%;overflow:hidden;background:rgba(128,128,128,.3);');
+        const letter = withTitle => {
+            if (!AV_FALLBACK || !who) return;
+            const info = avInfo(who);
+            av.textContent = info.letter;
+            av.style.cssText += 'display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;line-height:1;user-select:none;' +
+                'font-size:' + Math.round(size * 0.46) + 'px;background:' + info.bg + ';';
+            if (withTitle) av.title = AV_FB_TITLE;
+        };
         if (photo) {
             const im = mk('width:100%;height:100%;object-fit:cover;display:block;', null, 'img');
             im.src = photo;
             im.alt = '';
+            im.addEventListener('error', () => { im.remove(); letter(true); }, { once: true });
             av.appendChild(im);
+        } else {
+            letter(false);   // sem foto nenhuma (não é falha do servidor): só a letra, sem a dica
         }
         return av;
     }
@@ -2371,7 +2527,7 @@
         const tip = getLikeTip();
         tip.textContent = '';
         const row = mk('display:flex;gap:6px;align-items:center;');
-        data.users.slice(0, 3).forEach(u => row.appendChild(avatarEl(u.photo, 20)));
+        data.users.slice(0, 3).forEach(u => row.appendChild(avatarEl(u.photo, 20, u)));
         const n = data.count || data.users.length;
         row.appendChild(mk('', n === 1 ? '1 pessoa avaliou' : n + ' pessoas avaliaram'));
         tip.appendChild(row);
@@ -2461,7 +2617,7 @@
                 const a = mk('display:flex;align-items:center;gap:12px;min-height:56px;padding:4px 20px;' +
                              'text-decoration:none;color:inherit;', null, 'a');
                 a.href = u.href;
-                a.append(avatarEl(u.photo, 48), mk('', u.name, 'span'));
+                a.append(avatarEl(u.photo, 48, u), mk('', u.name, 'span'));
                 list.appendChild(a);
             });
         }).catch(() => {
@@ -2756,7 +2912,7 @@
             tip.appendChild(mk('opacity:.7', info.msg));
         } else {
             const row = mk('display:flex;gap:10px;align-items:flex-start;');
-            row.appendChild(avatarEl(info.photo, 32));
+            row.appendChild(avatarEl(info.photo, 32, { name: info.author, href: info.href }));
             const col = mk('min-width:0;flex:1;');
             if (info.author) col.appendChild(mk('font-weight:600;font-size:13.5px;', info.author));
             const allImgs = info.imgs || [], shownImgs = allImgs.slice(0, TIP_IMG_MAX);
@@ -3273,7 +3429,7 @@
     }
 
     // ---- Colar imagem também na caixa de CRIAR TÓPICO (textarea data-testid="board-topic-text-input") ----
-    const TOPIC_INPUT_SEL = '[data-testid="board-topic-text-input"]';
+    const TOPIC_INPUT_SEL = '[data-testid="board-topic-text-input"], textarea.vkuiTextarea__el[maxlength="4096"]';
     // Ícones que o VK costuma usar no botão de anexar foto, do mais provável ao menos provável
     const TOPIC_BTN_SELS = [
         'svg[class*="vkuiIcon--camera_"]', 'svg[class*="vkuiIcon--photo_"]', 'svg[class*="vkuiIcon--picture_"]',
@@ -6511,7 +6667,7 @@
 
             const secs = ((performance.now() - t0) / 1000).toFixed(2);
             cycles++;
-            status('⚡ v6.32 #' + cycles + ' · ' + secs + 's · ' +
+            status('⚡ v6.33 #' + cycles + ' · ' + secs + 's · ' +
                    (offset + 1) + '-' + (offset + items.length) + ' de ' + total +
                    (fresh.length ? ' · +' + fresh.length + ' NOVO(S)' : '') + (tailCapped ? ' · limite da rolagem contínua' : ''));
 
@@ -7576,7 +7732,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
 
     const SalvaVK = Object.freeze({
         core: Object.freeze({
-            version: '6.32',
+            version: '6.33',
             apiVersion: 1,
             get accountId() { return meId || null; },
             get page() {
@@ -7603,7 +7759,7 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
             addStyle: (css, id) => addStyle(css, id),
             mk: (css, text, tag) => mk(css, text, tag),
             themeColors: () => themeColors(),
-            avatarEl: (photo, size) => avatarEl(photo, size),
+            avatarEl: (photo, size, who) => avatarEl(photo, size, who),
             selectors: Object.freeze({
                 comment: COMMENT_SEL,
                 commentId: COMMENT_ID_RE.source,
@@ -8028,5 +8184,5 @@ ${mode(pair(MARK_PATH, MARK_COLOR_ON), 'Marcado por você', 'Seu favorito: só a
     // ===== FIM DA INTERFACE DE COMPATIBILIDADE =====
 
     loop();
-    log('Ativo (v6.32). Pausa de', INTERVAL_MS, 'ms entre consultas. Abas em segundo plano:', BG_TABS, '| id da aba:', TAB_ID);
+    log('Ativo (v6.33). Pausa de', INTERVAL_MS, 'ms entre consultas. Abas em segundo plano:', BG_TABS, '| id da aba:', TAB_ID);
 })();
