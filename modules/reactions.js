@@ -195,7 +195,7 @@ SalvaVK.modules.register({
             { id: 1, name: 'Coração', fb: '❤️', img: 'https://sun1-57.userapi.com/s/v1/s2/ANm2DG_5t7fPrmeAhECmu5qvAZPRFmwnXYiN5biDW4O9Jr9chK5hhxDfvfRJGkMV5vpy9WAQ3giKa2GMUsLuE74.svg' },
             { id: 2, name: 'Foguinho', fb: '🔥', img: 'https://sun9-56.userapi.com/s/v1/s2/iLoIErNjY4yga3YAbx8wtJeut-HqvvGWAteP6-VnoIiEESuMI1vUxJsLBpLRIbkGSOngwaykHXlwZF4pKylTESs.svg' },
             { id: 3, name: 'Risada', fb: '😂', img: 'https://sun9-48.userapi.com/s/v1/s2/DbyHbkmEOiS3llQKEPWZEafgIy5DloPacPax2ObRQIl9zIxfdpqxEG6w83piLhNlv68xeID3GFuF3vZAbnhl35M.svg' },
-            { id: 26, name: 'Palmas', fb: '👏', img: 'https://sun1-23.userapi.com/s/v1/s2/Zzysh-8t4hyBvLI4C7FpXzZmHLBKqRjSZec1zvPK_MNwb8UMAiWKp-tmrUUANRSK-qZ4r9Fux7rnXCdajJvIfDs.svg', adj: 'translate(0,-3.5px)', pillClip: 'inset(18% 0 0 0)', pillAdj: 'translate(0,-1.5px)' },
+            { id: 26, name: 'Palmas', fb: '👏', img: 'https://sun1-23.userapi.com/s/v1/s2/Zzysh-8t4hyBvLI4C7FpXzZmHLBKqRjSZec1zvPK_MNwb8UMAiWKp-tmrUUANRSK-qZ4r9Fux7rnXCdajJvIfDs.svg', adj: 'translate(0,-3.5px)', pillClip: 'inset(18% 0 0 0)', pillAdj: 'translate(0,-1.5px)', pickAdj: 'translate(0,-3.5px)' },
             { id: 19, name: 'Surpresa', fb: '😮', img: 'https://sun1-27.userapi.com/s/v1/s2/DJSrHsK6WIV2r-SO4_ef57sZdu2m4eDeAeSYla8HNSh4t3TP44BDnjuIvjd4wejt_mwFEdn-jvITLO-Fd571bF0.svg' },
             { id: 39, name: 'Diabinho', fb: '😈', img: 'https://sun1-83.userapi.com/s/v1/s2/372vSKMBRDEIm366NF5tcZwx1iVVU3IDdsgFFHCH0J-f4OV7i01PiUc3CNEXqU02ZT0BFg4Oda8X-E1CE-cOFlQ.svg' },
             { id: 22, name: 'Desprezo', fb: '🙄', img: 'https://sun1-56.userapi.com/s/v1/s2/W4swqWNQcNOZoA7c9XxDAKvgkI_eTxdp3baixdxFKPZDjRuS-GXr9fb0Ha4OOgnZJvCXkYRvorQ0cuG3vw4Fss4.svg', noLike: true },
@@ -220,7 +220,8 @@ SalvaVK.modules.register({
             if (size >= 28) { if (r.adj) im.style.transform = r.adj; }
             else {
                 if (r.pillClip) im.style.clipPath = r.pillClip;
-                if (r.pillAdj) im.style.transform = r.pillAdj;
+                const t = (size === RX_PICK_ICON_PX && r.pickAdj) || r.pillAdj;   // a barra de reações (25 px) tem ajuste próprio
+                if (t) im.style.transform = t;
             }
             im.addEventListener('error', () => {   // imagem do VK indisponível: usa o emoji
                 const s = document.createElement('span');
