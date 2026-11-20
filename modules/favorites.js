@@ -129,7 +129,11 @@ SalvaVK.modules.register({
             return b;
         }
         function findAnchor(p) {   // botão principal do cabeçalho: nosso "Atualizar Fórum" (fórum) ou "Editar o tópico" (tópico)
-            if (p.type === 'board') return document.querySelector('[data-ar-board-refresh]');
+            if (p.type === 'board') {   // enquanto o "Atualizar Fórum" não entrou, usa o "Criar um tópico" para o ☆ já nascer no cabeçalho
+                const own = document.querySelector('[data-ar-board-refresh]');
+                if (own) return own;
+                return [...document.querySelectorAll('button,a')].find(b => b.parentElement && /^\s*(criar um tópico|create (a )?topic|создать тему)\s*$/i.test(b.textContent || '')) || null;
+            }
             return document.querySelector('a[href^="/topic-"][href$="/edit"]');
         }
         function syncStar() {
