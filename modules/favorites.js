@@ -148,6 +148,7 @@ SalvaVK.modules.register({
                 if (star.parentElement !== anchor.parentElement || star.nextElementSibling !== anchor) anchor.parentElement.insertBefore(star, anchor);
                 star.classList.remove('is-fallback');
             } else if (!star.isConnected) {   // sem botão de referência (ex.: quem não pode editar o tópico): fica logo abaixo do título
+                if (p.type === 'board' && performance.now() < 8000) return;   // fórum: espera o cabeçalho do VK desenhar o "Criar um tópico"
                 const h2 = document.querySelector('h2');
                 if (!h2) return;
                 star.classList.add('is-fallback');
