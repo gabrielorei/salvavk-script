@@ -136,10 +136,15 @@ SalvaVK.modules.register({
             }
             return document.querySelector('a[href^="/topic-"][href$="/edit"]');
         }
+        function boardSearchActive() {   // tela "Resultados da pesquisa" do quadro
+            const inp = document.querySelector('[data-testid="board-search-input"]');
+            if (inp && String(inp.value || '').trim()) return true;
+            return /[?&](q|query|search)=/i.test(location.search);
+        }
         function syncStar() {
             const p = currentPage();
             const all = [...document.querySelectorAll('[' + STAR_ATTR + ']')];
-            if (!p) { all.forEach(e => e.remove()); return; }
+            if (!p || (p.type === 'board' && boardSearchActive())) { all.forEach(e => e.remove()); return; }
             let star = all.find(e => e.dataset.key === p.key) || null;
             all.forEach(e => { if (e !== star) e.remove(); });
             if (!star) star = buildStar(p);
